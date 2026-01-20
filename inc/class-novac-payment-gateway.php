@@ -535,6 +535,7 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
         $secret_key = $this->secret_key;
         $logger     = $this->logger;
 
+
         if ( ! isset( $_GET['_wpnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ) ) ) {
             if ( isset( $_GET['order_id'] ) ) {
                 // Handle expired Session.
@@ -576,8 +577,9 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
                 );
 
                 $order->add_order_note( esc_html__( 'verifying the Payment of Novac...', 'novac-woo' ) );
+                $this->logger->info( 'Verifying payment for order:' . $order_id . ' with transaction reference:' . $txn_ref );
 
-                $response = wp_safe_remote_request( $this->base_url . '/checkout/' . $txn_ref . '/verify', $args );
+                $response = wp_safe_remote_request( $this->base_url . 'checkout/' . $txn_ref . '/verify', $args );
 
                 if ( ! is_wp_error( $response ) && wp_remote_retrieve_response_code( $response ) === 200 ) {
                     // Request successful.
@@ -589,6 +591,7 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
                             $order->update_status( 'cancelled' );
                             $admin_note = esc_html__( 'Attention: Customer clicked on the cancel button on the payment gateway. We have updated the order to cancelled status. ', 'novac-woo' ) . '<br>';
                             $order->add_order_note( $admin_note );
+                            $this->logger->info( 'Customer cancelled payment for order:' . $order_id . ' with transaction reference:' . $txn_ref );
                         }
                         header( 'Location: ' . wc_get_cart_url() );
                         die();
@@ -599,6 +602,7 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
                                 $order->add_order_note( esc_html__( 'Payment Attempt Failed. Please Try Again.', 'novac-woo' ) );
                                 $admin_note = esc_html__( 'Customer Payment Attempt failed. Advise customer to try again with a different Payment Method', 'novac-woo' ) . '<br>';
                                 $order->add_order_note( $admin_note );
+                                $this->logger->info( 'Customer failed payment for order:' . $order_id . ' with transaction reference:' . $txn_ref );
                             }
                             header( 'Location: ' . wc_get_checkout_url() );
                             die();
@@ -610,17 +614,8 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
                                 $order->add_order_note( esc_html__( 'Payment Attempt Failed. Try Again', 'novac-woo' ) );
                                 $order->update_status( 'failed' );
                                 $admin_note = esc_html__( 'Payment Failed ', 'novac-woo' ) . '<br>';
-                                if ( count( $current_response->log->history ) !== 0 ) {
-                                    $last_item_in_history = $current_response->log->history[ count( $current_response->log->history ) - 1 ];
-                                    $message              = json_decode( $last_item_in_history->message, true );
-                                    $this->logger->error( 'Failed Customer Attempt Explanation for ' . $txn_ref . ':' . wp_json_encode( $message ) );
-                                    $reason = $message['error']['explanation'] ?? $message['errors'][0]['message'] ?? 'Non-Given';
-                                    /* translators: %s: Reason */
-                                    $admin_note .= sprintf( __( 'Reason: %s', 'novac-woo' ), $reason );
-
-                                } else {
-                                    $admin_note .= esc_html__( 'Reason: Non-Given', 'novac-woo' );
-                                }
+                                $this->logger->info( 'Customer failed payment for order:' . $order_id . ' with transaction reference:' . $txn_ref );
+                                $admin_note .= esc_html__( 'Reason: Non-Given', 'novac-woo' );
                                 $order->add_order_note( $admin_note );
                             }
                             header( 'Location: ' . wc_get_checkout_url() );
@@ -657,9 +652,9 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
                 // Transaction verified successfully.
                 // Proceed with setting the payment on hold.
                 $response = json_decode( $response['body'] );
-                $this->logger->info( wp_json_encode( $response ) );
+                $this->logger->info( "verify response: ".wp_json_encode( $response ) );
                 if ( (bool) $response->data->status ) {
-                    $amount = (float) $response->data->requested_amount;
+                    $amount = (float) $response->data->amount;
                     if ( $response->data->currency !== $order->get_currency() || ! $this->amounts_equal( $amount, $order->get_total() ) ) {
                         $order->update_status( 'on-hold' );
                         $customer_note  = 'Thank you for your order.<br>';
@@ -851,13 +846,13 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
 
                 $order->add_order_note( esc_html__( 'verifying the Payment on Novac...', 'novac-woo' ) );
 
-                $response = wp_safe_remote_request( $this->base_url . '/checkout/' . $txn_ref . '/verify', $args );
+                $response = wp_safe_remote_request( $this->base_url . 'checkout/' . $txn_ref . '/verify', $args );
 
                 if ( ! is_wp_error( $response ) && wp_remote_retrieve_response_code( $response ) === 200 ) {
                     // Request successful.
                     $current_response                  = \json_decode( $response['body'] );
                     $is_cancelled_or_pending_on_novac = in_array( $current_response->data->status, array( 'cancelled', 'pending' ), true );
-                    if ( isset( $_GET['status'] ) && 'cancelled' === $_GET['status'] && $is_cancelled_or_pending_on_novac ) { // phpcs:ignore
+                    if ( 'cancelled' === $event_data->status && $is_cancelled_or_pending_on_novac ) { // phpcs:ignore
                         if ( $order instanceof WC_Order ) {
                             $order->add_order_note( esc_html__( 'The customer clicked on the cancel button on Checkout.', 'novac-woo' ) );
                             $order->update_status( 'cancelled' );

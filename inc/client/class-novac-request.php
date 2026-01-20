@@ -73,6 +73,11 @@ class Novac_Request {
             // Rebuild the query string with the new parameters.
             $new_query_string = http_build_query( $query_array );
 
+            // if host is localhost and a port is specified include it
+            if ( isset( $url_parts['port'] ) ) {
+                $url_parts['host'] .= ':' . $url_parts['port'];
+            }
+
             // Rebuild the final URL with the new query string.
             $callback_url = $url_parts['scheme'] . '://' . $url_parts['host'] . $url_parts['path'] . '?' . $new_query_string;
         } else {
