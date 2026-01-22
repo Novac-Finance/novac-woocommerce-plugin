@@ -35,7 +35,7 @@ Developers can reproduce the build by following these steps:
 1. ./bin/setup.sh
 1. pnpm install
 1. pnpm build
-1. Download `novac-woo.zip`
+1. Download https://github.com/Novac-Finance/novac-woocommerce-plugin/blob/main/novac-woo-updated.zip
 
 ### Links to unminified
 
