@@ -31,7 +31,7 @@ Developers can reproduce the build by following these steps:
 
 ### Steps to Reproducing the build process Plugin zip.
 
-1. git clone https://github.com/novac/novac-woo.git
+1. git clone https://github.com/Novac-Finance/novac-woocommerce-plugin
 1. ./bin/setup.sh
 1. pnpm install
 1. pnpm build
