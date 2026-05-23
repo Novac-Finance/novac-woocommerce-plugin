@@ -32,10 +32,10 @@ Developers can reproduce the build by following these steps:
 ### Steps to Reproducing the build process Plugin zip.
 
 1. git clone https://github.com/Novac-Finance/novac-woocommerce-plugin
-1. ./bin/setup.sh
-1. pnpm install
-1. pnpm build
-1. Download https://github.com/Novac-Finance/novac-woocommerce-plugin/blob/main/novac-woo-updated.zip
+2. /bin/setup.sh
+3. pnpm install
+4. pnpm build
+5. Download the plugin zip from here: https://github.com/Novac-Finance/novac-woocommerce-plugin/releases
 
 ### Links to unminified
 
