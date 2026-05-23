@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-01-20T12:10:09+00:00\n"
+"POT-Creation-Date: 2026-05-23T10:48:33+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: novac-woo\n"
@@ -187,7 +187,7 @@ msgid "Sorry, your session has expired. <a href=\"%s\" class=\"wc-backward\">Ret
 msgstr ""
 
 #: inc/class-novac-payment-gateway.php:450
-#: inc/class-novac-payment-gateway.php:547
+#: inc/class-novac-payment-gateway.php:548
 msgid "We were unable to process your order, please try again."
 msgstr ""
 
@@ -195,112 +195,106 @@ msgstr ""
 msgid "Order Payment"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:548
+#: inc/class-novac-payment-gateway.php:549
 msgid "Attention: Customer session expired. "
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:549
+#: inc/class-novac-payment-gateway.php:550
 msgid "Customer should try again. order has status is now pending payment."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:578
+#: inc/class-novac-payment-gateway.php:579
 msgid "verifying the Payment of Novac..."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:588
-#: inc/class-novac-payment-gateway.php:862
+#: inc/class-novac-payment-gateway.php:590
+#: inc/class-novac-payment-gateway.php:857
 msgid "The customer clicked on the cancel button on Checkout."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:590
-#: inc/class-novac-payment-gateway.php:864
+#: inc/class-novac-payment-gateway.php:592
+#: inc/class-novac-payment-gateway.php:859
 msgid "Attention: Customer clicked on the cancel button on the payment gateway. We have updated the order to cancelled status. "
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:599
-#: inc/class-novac-payment-gateway.php:871
+#: inc/class-novac-payment-gateway.php:602
+#: inc/class-novac-payment-gateway.php:866
 msgid "Payment Attempt Failed. Please Try Again."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:600
-#: inc/class-novac-payment-gateway.php:872
+#: inc/class-novac-payment-gateway.php:603
+#: inc/class-novac-payment-gateway.php:867
 msgid "Customer Payment Attempt failed. Advise customer to try again with a different Payment Method"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:610
-#: inc/class-novac-payment-gateway.php:882
+#: inc/class-novac-payment-gateway.php:614
+#: inc/class-novac-payment-gateway.php:877
 msgid "Payment Attempt Failed. Try Again"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:612
-#: inc/class-novac-payment-gateway.php:884
+#: inc/class-novac-payment-gateway.php:616
+#: inc/class-novac-payment-gateway.php:879
 msgid "Payment Failed "
 msgstr ""
 
-#. translators: %s: Reason
-#: inc/class-novac-payment-gateway.php:619
-#, php-format
-msgid "Reason: %s"
-msgstr ""
-
-#: inc/class-novac-payment-gateway.php:622
-#: inc/class-novac-payment-gateway.php:885
-#: inc/class-novac-payment-gateway.php:894
+#: inc/class-novac-payment-gateway.php:618
+#: inc/class-novac-payment-gateway.php:880
+#: inc/class-novac-payment-gateway.php:889
 msgid "Reason: Non-Given"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:643
-#: inc/class-novac-payment-gateway.php:911
+#: inc/class-novac-payment-gateway.php:638
+#: inc/class-novac-payment-gateway.php:906
 msgid "The payment didn't return a valid response. It could have timed out or abandoned by the customer on Novac"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:647
+#: inc/class-novac-payment-gateway.php:642
 msgid "Please, contact us for information regarding this order."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:648
-#: inc/class-novac-payment-gateway.php:913
+#: inc/class-novac-payment-gateway.php:643
+#: inc/class-novac-payment-gateway.php:908
 msgid "Attention: New order has been placed on hold because we could not get a definite response from the payment gateway. Kindly contact the Novac support team at developers@novac.com to confirm the payment."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:649
-#: inc/class-novac-payment-gateway.php:914
+#: inc/class-novac-payment-gateway.php:644
+#: inc/class-novac-payment-gateway.php:909
 msgid "Payment Reference: "
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:668
-#: inc/class-novac-payment-gateway.php:926
+#: inc/class-novac-payment-gateway.php:663
+#: inc/class-novac-payment-gateway.php:921
 msgid "Attention: New order has been placed on hold because of incorrect payment amount or currency. Please, look into it."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:669
-#: inc/class-novac-payment-gateway.php:927
+#: inc/class-novac-payment-gateway.php:664
+#: inc/class-novac-payment-gateway.php:922
 msgid "Amount paid: "
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:669
-#: inc/class-novac-payment-gateway.php:927
+#: inc/class-novac-payment-gateway.php:664
+#: inc/class-novac-payment-gateway.php:922
 msgid "Order amount: "
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:669
-#: inc/class-novac-payment-gateway.php:927
+#: inc/class-novac-payment-gateway.php:664
+#: inc/class-novac-payment-gateway.php:922
 msgid " Reference: "
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:852
+#: inc/class-novac-payment-gateway.php:847
 msgid "verifying the Payment on Novac..."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:873
+#: inc/class-novac-payment-gateway.php:868
 msgid "Reason: Unknown"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:891
+#: inc/class-novac-payment-gateway.php:886
 msgid "Payment Reversed. A new payment is required"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:893
+#: inc/class-novac-payment-gateway.php:888
 msgid "Payment Reversed "
 msgstr ""
 

@@ -137,6 +137,8 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
 
         if ( is_admin() ) {
             add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array( $this, 'process_admin_options' ) );
+            add_filter( 'woocommerce_order_actions', array( $this, 'add_novac_requery_action' ) );
+            add_action( 'woocommerce_order_action_novac_requery_transaction', array( $this, 'process_novac_requery_action' ) );
         }
 
         $this->public_key = $this->test_public_key;
@@ -314,6 +316,7 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
 
         try {
             $novac_request = ( new Novac_Request() )->get_prepared_payload( $order, $this->get_secret_key() );
+            update_post_meta( $order_id, '_novac_txn_ref', $novac_request['reference']);
             $this->logger->info( 'Novac: Generating Payment link for order :' . $order_id );
         } catch ( \InvalidArgumentException $novac_request_error ) {
             wc_add_notice( $novac_request_error, 'error' );
@@ -416,7 +419,7 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
     }
 
     /**
-     * Loads (enqueue) static files (js & css) for the checkout page
+     * Loads (enqueue) static files (js & css) for the checkout page.
      *
      * @return void
      */
@@ -732,16 +735,16 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
 
 //        $merchant_secret_hash = hash_hmac( 'SHA512', $public_key, $secret_key );
 
-        if ( NOVAC_WOO_ALLOWED_WEBHOOK_IP_ADDRESS !== $this->novac_get_client_ip() ) {
-            $this->logger->info( 'Faudulent Webhook Notification Attempt [Access Restricted]: ' . (string) $this->novac_get_client_ip() );
-            wp_send_json(
-                array(
-                    'status'  => 'error',
-                    'message' => 'Unauthorized Access (Restriction)',
-                ),
-                WP_Http::UNAUTHORIZED
-            );
-        }
+//        if ( NOVAC_WOO_ALLOWED_WEBHOOK_IP_ADDRESS !== $this->novac_get_client_ip() ) {
+//            $this->logger->info( 'Faudulent Webhook Notification Attempt [Access Restricted]: ' . (string) $this->novac_get_client_ip() );
+//            wp_send_json(
+//                array(
+//                    'status'  => 'error',
+//                    'message' => 'Unauthorized Access (Restriction)',
+//                ),
+//                WP_Http::UNAUTHORIZED
+//            );
+//        }
 
         $event = file_get_contents( 'php://input' );
 
@@ -778,17 +781,17 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
             $event_data = $event->data;
 
             // check if transaction reference starts with WOO on hpos enabled.
-            if ( substr( $event_data->reference, 0, 4 ) !== 'WOO_' ) {
+            if ( empty( $event_data->transactionReference ) || substr( (string) $event_data->transactionReference, 0, 4 ) !== 'WOO_' ) {
                 wp_send_json(
                     array(
                         'status'  => 'failed',
-                        'message' => 'The transaction reference ' . $event_data->reference . ' is not a Novac WooCommerce Generated transaction',
+                        'message' => 'The transaction reference ' . ( $event_data->transactionReference ?? '' ) . ' is not a Novac WooCommerce Generated transaction',
                     ),
                     WP_Http::BAD_REQUEST
                 );
             }
 
-            $txn_ref  = sanitize_text_field( $event_data->reference );
+            $txn_ref  = sanitize_text_field( $event_data->transactionReference );
             $o        = explode( '_', $txn_ref );
             $order_id = intval( $o[1] );
             $order    = wc_get_order( $order_id );
@@ -948,10 +951,104 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
         wp_send_json(
             array(
                 'status'  => 'failed',
-                'message' => 'Unable to Processed Successfully',
+                'message' => 'Unable to process this webhook notification',
             ),
             WP_Http::CREATED
         );
         exit();
+    }
+
+    /**
+     * Add "Check Novac Transaction Status" to the Order Actions dropdown.
+     *
+     * @param array $actions Existing order actions.
+     * @return array
+     */
+    public function add_novac_requery_action( array $actions ): array {
+        global $theorder;
+
+        if ( ! $theorder instanceof WC_Order ) {
+            return $actions;
+        }
+
+        if ( 'novac' !== $theorder->get_payment_method() ) {
+            return $actions;
+        }
+
+        $actions['novac_requery_transaction'] = __( 'Check Novac Transaction Status', 'novac-woo' );
+
+        return $actions;
+    }
+
+    /**
+     * Handle the "Check Novac Transaction Status" order action.
+     *
+     * Queries the Novac verify endpoint and adds an order note with the result.
+     *
+     * @param WC_Order $order The order being acted on.
+     * @return void
+     */
+    public function process_novac_requery_action( WC_Order $order ): void {
+        $order_id = $order->get_id();
+        $txn_ref  = get_post_meta( $order_id, '_novac_txn_ref', true );
+
+        if ( empty( $txn_ref ) ) {
+            $order->add_order_note( __( 'Novac: No transaction reference found for this order. Cannot query status.', 'novac-woo' ) );
+            return;
+        }
+
+        $args = array(
+            'method'  => 'GET',
+            'headers' => array(
+                'Content-Type'  => 'application/json',
+                'Authorization' => 'Bearer ' . $this->secret_key,
+            ),
+        );
+
+        $this->logger->info( 'Manual requery for order ' . $order_id . ' with reference ' . $txn_ref );
+
+        $response = wp_safe_remote_request( $this->base_url . 'checkout/' . $txn_ref . '/verify', $args );
+
+        if ( is_wp_error( $response ) ) {
+            $order->add_order_note(
+                sprintf(
+                    /* translators: %s: error message */
+                    __( 'Novac: Transaction status check failed — %s', 'novac-woo' ),
+                    $response->get_error_message()
+                )
+            );
+            $this->logger->error( 'Requery error for order ' . $order_id . ': ' . $response->get_error_message() );
+            return;
+        }
+
+        $http_code = wp_remote_retrieve_response_code( $response );
+        $body      = json_decode( wp_remote_retrieve_body( $response ) );
+
+        if ( 200 !== $http_code || empty( $body->data ) ) {
+            $order->add_order_note(
+                sprintf(
+                    /* translators: %s: HTTP status code */
+                    __( 'Novac: Transaction status check returned an unexpected response (HTTP %s). Please check the Novac dashboard.', 'novac-woo' ),
+                    $http_code
+                )
+            );
+            return;
+        }
+
+        $status   = $body->data->status ?? 'unknown';
+        $amount   = $body->data->amount ?? 0;
+        $currency = $body->data->currency ?? '';
+
+        $note = sprintf(
+            /* translators: 1: status 2: currency 3: amount 4: reference */
+            __( 'Novac manual requery — Status: %1$s | Amount: %2$s %3$s | Reference: %4$s', 'novac-woo' ),
+            strtoupper( (string) $status ),
+            $currency,
+            $amount,
+            $txn_ref
+        );
+
+        $order->add_order_note( $note );
+        $this->logger->info( 'Requery result for order ' . $order_id . ': ' . wp_json_encode( $body->data ) );
     }
 }

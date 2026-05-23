@@ -30,9 +30,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Build plugin
-        run: pnpm run build:webpack
-
       - name: Create ZIP
         run: pnpm run build
 
