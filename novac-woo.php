@@ -117,7 +117,7 @@ function novac_woo_add_extension_register_script() {
         array(
             'asset_plugin_url' => plugins_url( '', NOVAC_WOO_PLUGIN_FILE ),
             'asset_plugin_dir' => plugins_url( '', NOVAC_WOO_PLUGIN_DIR ),
-            'novac_logo'      => plugins_url( 'assets/img/Novac-Logo3.png', NOVAC_WOO_PLUGIN_FILE ),
+            'novac_logo'      => plugins_url( 'assets/img/logo.svg', NOVAC_WOO_PLUGIN_FILE ),
             'novac_defaults'  => $novac_default_settings,
             'novac_webhook'   => WC()->api_request_url( 'Novac_Payment_Webhook' ),
         )

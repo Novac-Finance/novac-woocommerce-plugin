@@ -1,1 +1,19 @@
+/* ── Novac Buy Now Button ──────────────────────────────────────────────────── */
+.novac-buy-now-btn.button {
+    background-color: #C3D364;
+    color: #0A0E1A;
+    border: none;
+    font-weight: 700;
+    margin-left: 8px;
+    transition: background-color 0.15s ease, transform 0.1s ease;
+}
 
+.novac-buy-now-btn.button:hover {
+    background-color: #afc050;
+    color: #0A0E1A;
+    transform: translateY(-1px);
+}
+
+.novac-buy-now-btn.button:active {
+    transform: none;
+}

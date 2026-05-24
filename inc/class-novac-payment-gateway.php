@@ -69,6 +69,13 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
      * @var false|mixed|null
      */
     private $auto_complete_order;
+
+    /**
+     * Buy Now Button enabled.
+     *
+     * @var string yes|no
+     */
+    private string $buy_now_enabled;
     /**
      * Logger
      *
@@ -123,6 +130,7 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
         $this->auto_complete_order = $this->get_option( 'autocomplete_order' );
         $this->go_live             = $this->get_option( 'go_live' );
         $this->payment_style       = $this->get_option( 'payment_style' );
+        $this->buy_now_enabled     = $this->get_option( 'buy_now_enabled', 'no' );
         $this->country             = '';
         $this->supports            = array(
             'products',
@@ -134,6 +142,15 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
 
         // Webhook listener/API hook.
         add_action( 'woocommerce_api_novac_payment_webhook', array( $this, 'novac_notification_handler' ) );
+
+        // Buy Now button.
+        if ( 'yes' === $this->buy_now_enabled ) {
+            add_action( 'woocommerce_after_add_to_cart_button', array( $this, 'render_buy_now_button' ) );
+            add_filter( 'woocommerce_add_to_cart_validation', array( $this, 'add_buy_now_validation' ), 10, 3 );
+            add_filter( 'woocommerce_add_to_cart_redirect', array( $this, 'handle_buy_now_redirect' ), 99 );
+            add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_buy_now_script' ) );
+            add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_checkout_preselect_script' ) );
+        }
 
         if ( is_admin() ) {
             add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array( $this, 'process_admin_options' ) );
@@ -253,6 +270,14 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
                 'label'       => __( 'Live mode', 'novac-woo' ),
                 'type'        => 'checkbox',
                 'description' => __( 'Check this box if you\'re using your live keys.', 'novac-woo' ),
+                'default'     => 'no',
+                'desc_tip'    => true,
+            ),
+            'buy_now_enabled'    => array(
+                'title'       => __( 'Buy Now Button', 'novac-woo' ),
+                'label'       => __( 'Show a "Buy Now" button on product pages', 'novac-woo' ),
+                'type'        => 'checkbox',
+                'description' => __( 'Adds a "Buy Now" button to product pages that skips the cart and goes directly to checkout.', 'novac-woo' ),
                 'default'     => 'no',
                 'desc_tip'    => true,
             ),
@@ -643,7 +668,7 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
                 $customer_note  = 'Thank you for your order.<br>';
                 $customer_note .= 'We had an issue confirming your payment, but we have put your order <strong>on-hold</strong>. ';
                 $customer_note .= esc_html__( 'Please, contact us for information regarding this order.', 'novac-woo' );
-                $admin_note     = esc_html__( 'Attention: New order has been placed on hold because we could not get a definite response from the payment gateway. Kindly contact the Novac support team at developers@novac.com to confirm the payment.', 'novac-woo' ) . ' <br>';
+                $admin_note     = esc_html__( 'Attention: New order has been placed on hold because we could not get a definite response from the payment gateway. Kindly contact the Novac support team at support@novacpayment.com to confirm the payment.', 'novac-woo' ) . ' <br>';
                 $admin_note    .= esc_html__( 'Payment Reference: ', 'novac-woo' ) . $txn_ref;
 
                 $order->add_order_note( $customer_note, 1 );
@@ -735,16 +760,18 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
 
 //        $merchant_secret_hash = hash_hmac( 'SHA512', $public_key, $secret_key );
 
-//        if ( NOVAC_WOO_ALLOWED_WEBHOOK_IP_ADDRESS !== $this->novac_get_client_ip() ) {
-//            $this->logger->info( 'Faudulent Webhook Notification Attempt [Access Restricted]: ' . (string) $this->novac_get_client_ip() );
-//            wp_send_json(
-//                array(
-//                    'status'  => 'error',
-//                    'message' => 'Unauthorized Access (Restriction)',
-//                ),
-//                WP_Http::UNAUTHORIZED
-//            );
-//        }
+        if ( NOVAC_WOO_ALLOWED_WEBHOOK_IP_ADDRESS !== $this->novac_get_client_ip() ) {
+            $this->logger->info( 'Faudulent Webhook Notification Attempt [Access Restricted]: ' . (string) $this->novac_get_client_ip() );
+            wp_send_json(
+                array(
+                    'status'  => 'error',
+                    'message' => 'Unauthorized Access (Restriction)',
+                ),
+                WP_Http::UNAUTHORIZED
+            );
+        }
+
+        // https://github.com/woocommerce/woocommerce/blob/22af34971b26c7852057cb4f5585204bbe010e44/plugins/woocommerce/src/Enums/OrderStatus.php#L14
 
         $event = file_get_contents( 'php://input' );
 
@@ -816,13 +843,13 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
              * @since 1.0.0
              */
             do_action( 'novac_webhook_after_action', wp_json_encode( $event, true ) );
-            $statuses_in_question = array( 'pending', 'on-hold', 'cancelled', 'reversed' );
+            $statuses_in_question = array( 'pending', 'on-hold', 'cancelled');
             if ( 'failed' === $current_order_status ) {
                 // NOTE: customer must have tried to make payment again in the same session.
                 $statuses_in_question[] = 'failed';
             }
 
-            if ( ! in_array( $current_order_status, $statuses_in_question, true ) ) {
+            if ( ! in_array( $current_order_status, $statuses_in_question, true ) && 'reversed' !== $event_data->status ) {
                 wp_send_json(
                     array(
                         'status'  => 'error',
@@ -832,111 +859,108 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
                 );
             }
 
-            // Verify transaction and give value.
-            // Communicate with Novac to confirm payment.
+            // Verify transaction against Novac API (up to 3 attempts).
             $max_attempts = 3;
             $attempt      = 0;
-            $success      = false;
+            $api_response = null;
 
-            while ( $attempt < $max_attempts && ! $success ) {
-                $args = array(
-                    'method'  => 'GET',
-                    'headers' => array(
-                        'Content-Type'  => 'application/json',
-                        'Authorization' => 'Bearer ' . $secret_key,
-                    ),
-                );
+            $verify_args = array(
+                'method'  => 'GET',
+                'headers' => array(
+                    'Content-Type'  => 'application/json',
+                    'Authorization' => 'Bearer ' . $secret_key,
+                ),
+            );
 
-                $order->add_order_note( esc_html__( 'verifying the Payment on Novac...', 'novac-woo' ) );
+            while ( $attempt < $max_attempts && null === $api_response ) {
+                $response = wp_safe_remote_request( $this->base_url . 'checkout/' . $txn_ref . '/verify', $verify_args );
 
-                $response = wp_safe_remote_request( $this->base_url . 'checkout/' . $txn_ref . '/verify', $args );
-
-                if ( ! is_wp_error( $response ) && wp_remote_retrieve_response_code( $response ) === 200 ) {
-                    // Request successful.
-                    $current_response                  = \json_decode( $response['body'] );
-                    $is_cancelled_or_pending_on_novac = in_array( $current_response->data->status, array( 'cancelled', 'pending' ), true );
-                    if ( 'cancelled' === $event_data->status && $is_cancelled_or_pending_on_novac ) { // phpcs:ignore
-                        if ( $order instanceof WC_Order ) {
-                            $order->add_order_note( esc_html__( 'The customer clicked on the cancel button on Checkout.', 'novac-woo' ) );
-                            $order->update_status( 'cancelled' );
-                            $admin_note = esc_html__( 'Attention: Customer clicked on the cancel button on the payment gateway. We have updated the order to cancelled status. ', 'novac-woo' ) . '<br>';
-                            $order->add_order_note( $admin_note );
-                        }
-                    } else {
-                        if ( 'pending' === $current_response->data->status ) {
-
-                            if ( $order instanceof WC_Order ) {
-                                $order->add_order_note( esc_html__( 'Payment Attempt Failed. Please Try Again.', 'novac-woo' ) );
-                                $admin_note = esc_html__( 'Customer Payment Attempt failed. Advise customer to try again with a different Payment Method', 'novac-woo' ) . '<br>';
-                                $admin_note .= esc_html__( 'Reason: Unknown', 'novac-woo' );
-
-                                $order->add_order_note( $admin_note );
-                            }
-                        }
-
-                        if ( 'failed' === $current_response->data->status || 'abandoned' === $current_response->data->status ) {
-
-                            if ( $order instanceof WC_Order ) {
-                                $order->add_order_note( esc_html__( 'Payment Attempt Failed. Try Again', 'novac-woo' ) );
-                                $order->update_status( 'failed' );
-                                $admin_note = esc_html__( 'Payment Failed ', 'novac-woo' ) . '<br>';
-                                $admin_note .= esc_html__( 'Reason: Non-Given', 'novac-woo' );
-                                $order->add_order_note( $admin_note );
-                            }
-                        }
-
-                        if ( 'reversed' === $current_response->data->status ) {
-                            $order->add_order_note( esc_html__( 'Payment Reversed. A new payment is required', 'novac-woo' ) );
-                            $order->update_status( 'pending' );
-                            $admin_note = esc_html__( 'Payment Reversed ', 'novac-woo' ) . '<br>';
-                            $admin_note .= esc_html__( 'Reason: Non-Given', 'novac-woo' );
-                            $order->add_order_note( $admin_note );
-                        }
-
-                        $success = true;
-                    }
+                if ( ! is_wp_error( $response ) && 200 === wp_remote_retrieve_response_code( $response ) ) {
+                    $api_response = json_decode( wp_remote_retrieve_body( $response ) );
                 } else {
-                    // Retry.
                     ++$attempt;
-                    usleep( 2000000 ); // Wait for 2 seconds before retrying (adjust as needed).
+                    usleep( 2000000 );
                 }
             }
 
-            if ( ! $success ) {
-                // Get the transaction from your DB using the transaction reference (txref)
-                // Queue it for requery. Preferably using a queue system. The requery should be about 15 minutes after.
-                // Ask the customer to contact your support and you should escalate this issue to the Novac support team. Send this as an email and as a notification on the page. just incase the page timesout or disconnects.
-                $order->add_order_note( esc_html__( 'The payment didn\'t return a valid response. It could have timed out or abandoned by the customer on Novac', 'novac-woo' ) );
+            if ( null === $api_response || empty( $api_response->data ) ) {
                 $order->update_status( 'on-hold' );
-                $admin_note  = esc_html__( 'Attention: New order has been placed on hold because we could not get a definite response from the payment gateway. Kindly contact the Novac support team at developers@novac.com to confirm the payment.', 'novac-woo' ) . ' <br>';
+                $admin_note  = esc_html__( 'Attention: Order placed on hold — no valid response from Novac after 3 attempts. Contact support@novacpayment.com.', 'novac-woo' ) . '<br>';
                 $admin_note .= esc_html__( 'Payment Reference: ', 'novac-woo' ) . $txn_ref;
                 $order->add_order_note( $admin_note );
-                $this->logger->error( 'Failed to verify transaction ' . $txn_ref . ' after multiple attempts.' );
-            } else {
-                // Transaction verified successfully.
-                // Proceed with setting the payment on hold.
-                $response = json_decode( $response['body'] );
-                $this->logger->info( wp_json_encode( $response ) );
-                if ( (bool) $response->data->status ) {
-                    $amount = (float) $response->data->requested_amount;
-                    if ( $response->data->currency !== $order->get_currency() || ! $this->amounts_equal( $amount, $order->get_total() ) ) {
+                $this->logger->error( 'Failed to verify transaction ' . $txn_ref . ' after ' . $max_attempts . ' attempts.' );
+
+                wp_send_json(
+                    array(
+                        'status'  => 'error',
+                        'message' => 'Could not verify transaction with Novac.',
+                    ),
+                    WP_Http::OK
+                );
+            }
+
+            $novac_status = (string) ( $api_response->data->status ?? 'unknown' );
+            $this->logger->info( 'Webhook verify response for ' . $txn_ref . ': ' . wp_json_encode( $api_response->data ) );
+
+            switch ( $novac_status ) {
+                case 'successful':
+                    $amount   = (float) ( $api_response->data->amount ?? 0 );
+                    $currency = (string) ( $api_response->data->currency ?? '' );
+
+                    if ( $currency !== $order->get_currency() || ! $this->amounts_equal( $amount, $order->get_total() ) ) {
                         $order->update_status( 'on-hold' );
-                        $admin_note  = esc_html__( 'Attention: New order has been placed on hold because of incorrect payment amount or currency. Please, look into it.', 'novac-woo' ) . '<br>';
-                        $admin_note .= esc_html__( 'Amount paid: ', 'novac-woo' ) . $response->data->currency . ' ' . $amount . ' <br>' . esc_html__( 'Order amount: ', 'novac-woo' ) . $order->get_currency() . ' ' . $order->get_total() . ' <br>' . esc_html__( ' Reference: ', 'novac-woo' ) . $response->data->reference;
+                        $admin_note  = esc_html__( 'Attention: Order on hold — amount or currency mismatch. Please review.', 'novac-woo' ) . '<br>';
+                        $admin_note .= esc_html__( 'Amount paid: ', 'novac-woo' ) . $currency . ' ' . $amount . '<br>';
+                        $admin_note .= esc_html__( 'Order amount: ', 'novac-woo' ) . $order->get_currency() . ' ' . $order->get_total();
                         $order->add_order_note( $admin_note );
                     } else {
-                        $order->payment_complete( $order->get_id() );
+                        $order->payment_complete();
                         if ( 'yes' === $this->auto_complete_order ) {
                             $order->update_status( 'completed' );
                         }
-                        $order->add_order_note( 'Payment was successful on novac-woo' );
-                        $order->add_order_note( 'Novac  reference: ' . $txn_ref );
-
-                        $customer_note  = 'Thank you for your order.<br>';
-                        $customer_note .= 'Your payment was successful, we are now <strong>processing</strong> your order.';
-                        $order->add_order_note( $customer_note, 1 );
+                        $order->add_order_note( esc_html__( 'Payment verified and successful on Novac.', 'novac-woo' ) );
+                        $order->add_order_note( esc_html__( 'Novac reference: ', 'novac-woo' ) . $txn_ref );
+                        $order->add_order_note( 'Thank you for your order.<br>Your payment was successful, we are now <strong>processing</strong> your order.', 1 );
                     }
-                }
+                    break;
+
+                case 'pending':
+                    $order->update_status( 'on-hold' );
+                    $order->add_order_note( esc_html__( 'Payment still pending on Novac. Order placed on hold pending confirmation.', 'novac-woo' ) );
+                    break;
+
+                case 'cancelled':
+                    $order->update_status( 'cancelled' );
+                    $order->add_order_note( esc_html__( 'Transaction cancelled by the customer on Novac.', 'novac-woo' ) );
+                    break;
+
+                case 'abandoned':
+                case 'failed':
+                    $order->update_status( 'failed' );
+                    $order->add_order_note(
+                        sprintf(
+                            /* translators: %s: novac status */
+                            esc_html__( 'Payment %s on Novac. Order marked as failed.', 'novac-woo' ),
+                            $novac_status
+                        )
+                    );
+                    break;
+
+                case 'reversed':
+                    $order->update_status( 'on-hold' );
+                    $order->add_order_note( esc_html__( 'Payment reversed on Novac. Order placed on hold — a new payment is required.', 'novac-woo' ) );
+                    break;
+
+                default:
+                    $order->update_status( 'on-hold' );
+                    $order->add_order_note(
+                        sprintf(
+                            /* translators: %s: novac status */
+                            esc_html__( 'Unrecognised Novac status "%s". Order placed on hold for manual review.', 'novac-woo' ),
+                            $novac_status
+                        )
+                    );
+                    break;
             }
 
             wp_send_json(
@@ -1050,5 +1074,98 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
 
         $order->add_order_note( $note );
         $this->logger->info( 'Requery result for order ' . $order_id . ': ' . wp_json_encode( $body->data ) );
+    }
+
+    /**
+     * Enqueue the checkout pre-select script when arriving from a Buy Now click.
+     *
+     * @return void
+     */
+    public function enqueue_checkout_preselect_script(): void {
+        if ( ! is_checkout() || empty( $_GET['novac_buy_now'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+            return;
+        }
+
+        wp_enqueue_script(
+            'novac-checkout-preselect',
+            plugins_url( 'assets/js/checkout-preselect.js', NOVAC_WOO_PLUGIN_FILE ),
+            array( 'jquery' ),
+            NOVAC_WOO_VERSION,
+            true
+        );
+
+        wp_localize_script(
+            'novac-checkout-preselect',
+            'novacBuyNow',
+            array( 'gatewayId' => $this->id )
+        );
+    }
+
+    /**
+     * Enqueue the Buy Now script on single product pages.
+     *
+     * @return void
+     */
+    public function enqueue_buy_now_script(): void {
+        if ( ! is_product() ) {
+            return;
+        }
+
+        wp_enqueue_script(
+            'novac-buy-now',
+            plugins_url( 'assets/js/buy-now.js', NOVAC_WOO_PLUGIN_FILE ),
+            array(),
+            NOVAC_WOO_VERSION,
+            true
+        );
+    }
+
+    /**
+     * Render the "Buy Now" button on product pages.
+     *
+     * The button submits the existing add-to-cart form (so variation selects and
+     * quantity are included automatically) and signals the redirect filter below
+     * to send the customer straight to checkout instead of the cart.
+     *
+     * @return void
+     */
+    public function render_buy_now_button(): void {
+        global $product;
+
+        if ( ! $product instanceof WC_Product ) {
+            return;
+        }
+
+        printf(
+            '<button type="submit" name="novac_buy_now" value="1" class="button alt novac-buy-now-btn" data-product-id="%s" data-checkout-url="%s" data-nonce="%s">%s</button>',
+            esc_attr( (string) $product->get_id() ),
+            esc_attr( add_query_arg( 'novac_buy_now', '1', wc_get_checkout_url() ) ),
+            esc_attr( wp_create_nonce( 'wc_store_api' ) ),
+            esc_html__( 'Buy now with Novac', 'novac-woo' )
+        );
+    }
+
+    /**
+     * Redirect straight to checkout after a "Buy Now" add-to-cart.
+     * Pre-selects Novac in the WC session so the payment radio is already
+     * chosen when the checkout page renders.
+     *
+     * @param string $url The default redirect URL (usually the cart).
+     * @return string
+     */
+    public function handle_buy_now_redirect( string $url ): string {
+        if ( ! empty( $_POST['novac_buy_now'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+            WC()->session->set( 'chosen_payment_method', $this->id );
+            return add_query_arg( 'novac_buy_now', '1', wc_get_checkout_url() );
+        }
+
+        return $url;
+    }
+
+    public function add_buy_now_validation( $passed, $product_id, $quantity ) {
+        if ( $passed && isset( $_REQUEST['myplugin_buy_now'] ) ) {
+            WC()->cart->empty_cart();
+        }
+        return $passed;
     }
 }
