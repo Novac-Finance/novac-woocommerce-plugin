@@ -1,10 +1,329 @@
-/* Custom CSS for Settings Page */
+// ─── Novac Brand Tokens ───────────────────────────────────────────────────────
+$n-dark:         #0A0E1A;
+$n-navy:         #141827;
+$n-card:         #1C2236;
+$n-green:        #C3D364;
+$n-green-dim:    rgba(110, 231, 96, 0.15);
+$n-green-border: rgba(110, 231, 96, 0.30);
+$n-white:        #FFFFFF;
+$n-muted:        #8997AE;
+$n-border:       rgba(255, 255, 255, 0.08);
+$n-shadow:       0 4px 24px rgba(0, 0, 0, 0.35);
 
-.novac__settings_logo {
-  align-items: center;
-  justify-self: center;
-  width: 250px;
-  height: 24px;
+// ─── Hero / Banner ────────────────────────────────────────────────────────────
+.novac-hero {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 18px;
+  box-shadow: $n-shadow;
+
+  &__img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  &__overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 20px 28px;
+    background: linear-gradient(transparent, rgba($n-dark, 0.88));
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  &__greeting {
+    color: $n-white;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+
+  &__sub {
+    color: rgba($n-white, 0.65);
+    font-size: 12.5px;
+  }
 }
 
-// style={ { width: "250px", height: "150px", display: "block", marginLeft: "auto", marginRight: "auto" } }
+// ─── Status Bar ───────────────────────────────────────────────────────────────
+.novac-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 20px;
+  background: $n-navy;
+  border: 1px solid $n-border;
+  border-radius: 8px;
+  margin-bottom: 16px;
+
+  &__label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: $n-muted;
+    flex-shrink: 0;
+  }
+
+  &__badges {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+}
+
+// ─── Badges ───────────────────────────────────────────────────────────────────
+.novac-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+
+  &::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  &--active {
+    background: $n-green-dim;
+    color: $n-green;
+    border: 1px solid $n-green-border;
+    &::before { background: $n-green; box-shadow: 0 0 5px $n-green; }
+  }
+
+  &--inactive {
+    background: rgba(255, 80, 80, 0.12);
+    color: #FF7070;
+    border: 1px solid rgba(255, 80, 80, 0.28);
+    &::before { background: #FF7070; }
+  }
+
+  &--live {
+    background: $n-green-dim;
+    color: $n-green;
+    border: 1px solid $n-green-border;
+    &::before { background: $n-green; box-shadow: 0 0 5px $n-green; }
+  }
+
+  &--test {
+    background: rgba(255, 179, 0, 0.12);
+    color: #FFBA3E;
+    border: 1px solid rgba(255, 179, 0, 0.28);
+    &::before { background: #FFBA3E; }
+  }
+}
+
+// ─── Panels ───────────────────────────────────────────────────────────────────
+.novac-panel {
+  border-radius: 8px !important;
+  border: 1px solid $n-border !important;
+  overflow: hidden;
+  margin-bottom: 14px !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+
+  // WP component overrides
+  .components-panel__body {
+    background: $n-navy !important;
+    border-top: none !important;
+    border-bottom: none !important;
+    padding: 20px !important;
+  }
+
+  .components-panel__body-title {
+    background: $n-dark !important;
+    border-bottom: 1px solid $n-border !important;
+    margin: 0 !important;
+
+    button.components-button {
+      color: $n-white !important;
+      font-weight: 600 !important;
+      font-size: 13px !important;
+      padding: 14px 16px !important;
+      width: 100% !important;
+      text-align: left !important;
+
+      &:hover { color: $n-green !important; }
+
+      svg { fill: currentColor !important; }
+    }
+  }
+
+  &__toggle-row {
+    padding-bottom: 18px;
+    border-bottom: 1px solid $n-border;
+    margin-bottom: 20px;
+
+    .components-base-control__label,
+    .components-toggle-control__label {
+      color: $n-white !important;
+      font-weight: 500;
+    }
+
+    .components-base-control__help {
+      color: $n-muted !important;
+      font-size: 12px;
+    }
+  }
+
+  &__keys {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 6px;
+
+    // Style WP input controls
+    .components-base-control__label {
+      color: rgba($n-white, 0.85) !important;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .components-input-control__input {
+      background: rgba($n-dark, 0.6) !important;
+      border-color: $n-border !important;
+      color: $n-white !important;
+      border-radius: 6px !important;
+
+      &:focus {
+        border-color: $n-green !important;
+        box-shadow: 0 0 0 1px $n-green !important;
+      }
+    }
+  }
+
+  &__actions {
+    margin-top: 22px;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  &__section-hint {
+    font-size: 12.5px;
+    color: $n-muted;
+    margin-bottom: 18px;
+    line-height: 1.5;
+  }
+}
+
+// ─── Webhook Box ──────────────────────────────────────────────────────────────
+.novac-webhook-box {
+  background: rgba($n-dark, 0.55);
+  border: 1px solid $n-green-border;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 18px 0;
+
+  &__label {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: $n-green;
+    margin-bottom: 10px;
+  }
+
+  &__row {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  &__url {
+    flex: 1;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 11.5px;
+    color: rgba($n-white, 0.85);
+    background: rgba(0, 0, 0, 0.3);
+    padding: 9px 12px;
+    border-radius: 5px;
+    border: 1px solid $n-border;
+    word-break: break-all;
+    line-height: 1.5;
+  }
+
+  &__copy.components-button {
+    flex-shrink: 0;
+    border: 1px solid $n-green-border !important;
+    color: $n-green !important;
+    border-radius: 5px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    height: auto !important;
+    padding: 8px 14px !important;
+
+    &:hover {
+      background: $n-green-dim !important;
+    }
+  }
+
+  &__hint {
+    margin-top: 10px;
+    font-size: 12px;
+    color: $n-muted;
+    line-height: 1.5;
+
+    a {
+      color: $n-green;
+      text-decoration: none;
+      &:hover { text-decoration: underline; }
+    }
+  }
+}
+
+// ─── Save / CTA Button ────────────────────────────────────────────────────────
+.novac-settings-cta.components-button {
+  background: $n-green !important;
+  color: $n-dark !important;
+  border: none !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  border-radius: 6px !important;
+  padding: 8px 22px !important;
+  height: auto !important;
+  transition: background 0.15s ease, transform 0.1s ease;
+
+  &:hover:not(:disabled) {
+    background: darken($n-green, 8%) !important;
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: none !important;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+  }
+
+  &.is-destructive {
+    background: #FF6B6B !important;
+    color: $n-white !important;
+
+    &:hover:not(:disabled) {
+      background: darken(#FF6B6B, 8%) !important;
+    }
+  }
+}
+
+// ─── Sandbox description ──────────────────────────────────────────────────────
+.novac-sandbox-description {
+  font-size: 13px;
+  color: $n-muted;
+  line-height: 1.6;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  background: rgba($n-dark, 0.4);
+  border-left: 3px solid #FFBA3E;
+  border-radius: 0 5px 5px 0;
+}

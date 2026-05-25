@@ -1,0 +1,52 @@
+name: Build & Attach Release ZIP
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build plugin ZIP
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: composer
+
+      - name: Install WP-CLI
+        run: |
+          curl -sO https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+          chmod +x wp-cli.phar
+          sudo mv wp-cli.phar /usr/local/bin/wp
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Create ZIP
+        run: pnpm run build
+
+      - name: Find ZIP file
+        id: find-zip
+        run: echo "zip=$(find . -maxdepth 1 -name '*.zip' | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload ZIP to release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: novac-woo.zip

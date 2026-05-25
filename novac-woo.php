@@ -3,7 +3,7 @@
  * Plugin Name: Novac Woo
  * Plugin URI: https://developer.novacpayment.com
  * Description: This plugin is the official plugin of Novac.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Novac
  * Author URI: https://www.app.novacpayment.com
  * Developer: Novac Developers
@@ -117,7 +117,7 @@ function novac_woo_add_extension_register_script() {
         array(
             'asset_plugin_url' => plugins_url( '', NOVAC_WOO_PLUGIN_FILE ),
             'asset_plugin_dir' => plugins_url( '', NOVAC_WOO_PLUGIN_DIR ),
-            'novac_logo'      => plugins_url( 'assets/img/Novac-Logo3.png', NOVAC_WOO_PLUGIN_FILE ),
+            'novac_logo'      => plugins_url( 'assets/img/logo.svg', NOVAC_WOO_PLUGIN_FILE ),
             'novac_defaults'  => $novac_default_settings,
             'novac_webhook'   => WC()->api_request_url( 'Novac_Payment_Webhook' ),
         )

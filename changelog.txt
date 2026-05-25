@@ -1,4 +1,7 @@
 == Changelog ==
+= 1.0.1 =
+* Fixed: Webhook Transaction Verification Handler.
+
 = 1.0.0 =
 * Created: Initial plugin source.
 * Added: Support for WooCommerce Checkout and cart blocks.
