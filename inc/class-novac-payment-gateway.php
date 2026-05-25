@@ -753,10 +753,7 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
      * Process Webhook notifications.
      */
     public function novac_notification_handler() {
-        $public_key = $this->public_key;
         $secret_key = $this->secret_key;
-        $logger     = $this->logger;
-        $sdk        = $this->sdk;
 
 //        $merchant_secret_hash = hash_hmac( 'SHA512', $public_key, $secret_key );
 
