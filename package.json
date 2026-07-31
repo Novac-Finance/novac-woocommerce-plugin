@@ -23,7 +23,16 @@
     "wp-env": "wp-env",
     "prepare": "husky",
     "lint:css": "wp-scripts lint-style",
-    "lint:js": "wp-scripts lint-js"
+    "lint:js": "wp-scripts lint-js",
+    "env:start": "wp-env start",
+    "env:stop": "wp-env stop",
+    "env:destroy": "wp-env destroy",
+    "env:setup": "bash tests/e2e/bin/setup-store.sh",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report artifacts/playwright-report",
+    "test:e2e:setup": "pnpm run env:start && pnpm run build:webpack && pnpm run env:setup"
   },
   "lint-staged": {
     "*.js": [
@@ -70,6 +79,7 @@
     "@babel/core": "^7.28.5",
     "@babel/preset-env": "^7.28.5",
     "@formatjs/icu-messageformat-parser": "^2.11.4",
+    "@playwright/test": "^1.62.1",
     "@svgr/cli": "^8.1.0",
     "@woocommerce/dependency-extraction-webpack-plugin": "^4.0.0",
     "@woocommerce/eslint-plugin": "^2.3.0",

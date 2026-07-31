@@ -2,6 +2,10 @@ node_modules/
 dist/
 build/
 vendor/
+artifacts/
+test-results/
+playwright-report/
+.wp-env.override.json
 .env
 .DS_Store
 .idea/
