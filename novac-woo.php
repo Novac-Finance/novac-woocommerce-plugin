@@ -3,7 +3,7 @@
  * Plugin Name: Novac Woo
  * Plugin URI: https://developer.novacpayment.com
  * Description: This plugin is the official plugin of Novac.
- * Version: 1.0.1
+ * Version: 1.0.2
  * Author: Novac
  * Author URI: https://www.app.novacpayment.com
  * Developer: Novac Developers
@@ -102,14 +102,23 @@ function novac_woo_add_extension_register_script() {
         'enabled'            => 'no',
         'go_live'            => 'no',
         'title'              => 'Novac',
-        'live_public_key'    => 'pk_XXXXXXXXXXXX',
-        'live_secret_hash'   => '',
-        'test_public_key'    => 'pk_XXXXXXXXXXXX',
-        'test_secret_hash'   => '',
+        'description'        => '',
+        'payment_style'      => 'redirect',
+        'live_public_key'    => '',
+        'live_secret_key'    => '',
+        'test_public_key'    => '',
+        'test_secret_key'    => '',
         'autocomplete_order' => 'no',
+        'buy_now_enabled'    => 'no',
     );
 
-    $novac_default_settings = get_option( 'woocommerce_novac_settings', $novac_fallback_settings );
+    // Merge rather than replace: a store saved before a setting existed would
+    // otherwise hand the settings page an object with missing fields.
+    $novac_default_settings = get_option( 'woocommerce_novac_settings', array() );
+    $novac_default_settings = wp_parse_args(
+        is_array( $novac_default_settings ) ? $novac_default_settings : array(),
+        $novac_fallback_settings
+    );
 
     wp_localize_script(
         'novac-admin-js',

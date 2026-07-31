@@ -1,4 +1,13 @@
 == Changelog ==
+= 1.0.2 =
+* Fixed: NOVAC-01 — the settings page no longer saves an enabled gateway with missing or malformed API keys, and keys are format-checked and verified against the Novac API on save.
+* Fixed: NOVAC-01 — the gateway now returns false from is_available() when the keys for the active mode are unusable, so Novac is hidden at checkout instead of failing at payment time.
+* Fixed: NOVAC-02 — the cart total is checked against the minimum chargeable amount per currency (NGN 100). Below it, Novac is hidden and a notice explains why.
+* Fixed: Checkout errors now distinguish a store misconfiguration from a transaction failure, and the underlying cause is written to the WooCommerce log.
+* Fixed: The admin notice warning merchants about missing API keys was built but never displayed.
+* Fixed: Payment initiation treated any non-WP_Error response as success, ignoring the HTTP status and reading the redirect URL off an undecoded response.
+* Added: `novac_woo_minimum_amounts` filter for per-currency minimum chargeable amounts.
+
 = 1.0.1 =
 * Fixed: Webhook Transaction Verification Handler.
 
