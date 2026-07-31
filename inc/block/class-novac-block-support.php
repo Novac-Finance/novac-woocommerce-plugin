@@ -54,7 +54,7 @@ final class Novac_Block_Support extends AbstractPaymentMethodType {
             $this->gateway = new Novac_Payment_Gateway();
         } else {
             $gateways      = WC()->payment_gateways->payment_gateways();
-            $this->gateway = $gateways[ $this->name ];
+            $this->gateway = $gateways[ $this->name ] ?? null;
         }
     }
 
@@ -72,6 +72,12 @@ final class Novac_Block_Support extends AbstractPaymentMethodType {
             }
         }
 
+        if ( ! $this->gateway instanceof WC_Payment_Gateway ) {
+            return false;
+        }
+
+        // Defers to the gateway's is_available(), so the block checkout hides
+        // Novac under the same conditions as the classic checkout.
         return $this->gateway->is_available();
     }
 
@@ -81,6 +87,10 @@ final class Novac_Block_Support extends AbstractPaymentMethodType {
      * @return string[]
      */
     public function get_supported_features(): array {
+        if ( ! $this->gateway instanceof WC_Payment_Gateway ) {
+            return array();
+        }
+
         return $this->gateway->supports;
     }
 
@@ -130,9 +140,11 @@ final class Novac_Block_Support extends AbstractPaymentMethodType {
             'icons'       => $this->get_icons(),
             'supports'    => array_filter( $this->get_supported_features(), array( $this->gateway, 'supports' ) ),
             'isAdmin'     => is_admin(),
-            'public_key'  => ( 'yes' === $this->settings['go_live'] ) ? $this->settings['live_public_key'] : $this->settings['test_public_key'],
+            'public_key'  => ( 'yes' === ( $this->settings['go_live'] ?? 'no' ) )
+                ? ( $this->settings['live_public_key'] ?? '' )
+                : ( $this->settings['test_public_key'] ?? '' ),
             'asset_url'   => plugins_url( 'assets', NOVAC_WOO_PLUGIN_FILE ),
-            'title'       => $this->settings['title'],
+            'title'       => $this->settings['title'] ?? __( 'Novac', 'novac-woo' ),
             'description' => $this->settings['description'] ?? '',
         );
     }

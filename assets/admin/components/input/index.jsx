@@ -41,7 +41,7 @@ export const InputWithSideLabel = ({ initialValue, labelName, isConfidential, on
     );
 };
 
-const Input = ({ initialValue, labelName, onChange, isConfidential, error }) => {
+const Input = ({ initialValue, labelName, onChange, isConfidential, error, isRequired, help }) => {
     const [value, setValue] = useState(initialValue);
     const type = isConfidential ? 'password' : 'text';
 
@@ -54,18 +54,28 @@ const Input = ({ initialValue, labelName, onChange, isConfidential, error }) => 
         // Optional side effects when value changes
     }, [value]);
 
+    const label = isRequired ? `${labelName || 'Label'} *` : (labelName || 'Label');
+
     return (
         <div style={{ marginBottom: '1rem' }}>
             <InputControl
-                label={labelName || 'Label'}
+                label={label}
                 value={value}
                 type={type}
+                required={!!isRequired}
+                aria-invalid={!!error}
                 onChange={handleChange}
             />
-            {error && (
-                <p style={{ color: 'red', fontSize: '0.875em', marginTop: '0.25rem' }}>
+            {error ? (
+                <p role="alert" style={{ color: '#d63638', fontSize: '0.875em', marginTop: '0.25rem' }}>
                     {error}
                 </p>
+            ) : (
+                help && (
+                    <p style={{ color: '#757575', fontSize: '0.875em', marginTop: '0.25rem' }}>
+                        {help}
+                    </p>
+                )
             )}
         </div>
     );

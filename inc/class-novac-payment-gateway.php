@@ -16,6 +16,7 @@ declare(strict_types=1);
 defined( 'ABSPATH' ) || exit;
 
 require_once __DIR__ . '/util/class-novac-logger.php';
+require_once __DIR__ . '/util/class-novac-validator.php';
 
 /**
  * Novac x WooCommerce Integration Class.
@@ -138,6 +139,10 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
 
         add_action( 'admin_notices', array( $this, 'admin_notices' ) );
         add_action( 'woocommerce_receipt_' . $this->id, array( $this, 'receipt_page' ) );
+
+        // Tell the customer why Novac is missing before they try to pay, rather than after.
+        add_action( 'woocommerce_before_checkout_form', array( $this, 'minimum_amount_notice' ) );
+        add_action( 'woocommerce_before_cart', array( $this, 'minimum_amount_notice' ) );
         add_action( 'woocommerce_api_wc_novac_payment_gateway', array( $this, 'novac_verify_payment' ) );
 
         // Webhook listener/API hook.
@@ -168,6 +173,123 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
         $this->logger = Novac_Logger::instance();
 
 //        add_action( 'wp_enqueue_scripts', array( $this, 'payment_scripts' ) );
+    }
+
+    /**
+     * Whether the gateway should be offered at checkout.
+     *
+     * Runs before the payment method is rendered, so configuration problems and
+     * unchargeable cart totals hide the gateway instead of surfacing as a
+     * generic failure once the customer has already clicked pay.
+     *
+     * @return bool
+     */
+    public function is_available() {
+        if ( ! parent::is_available() ) {
+            return false;
+        }
+
+        if ( ! empty( $this->get_unusable_keys() ) ) {
+            return false;
+        }
+
+        if ( ! $this->current_total_meets_minimum() ) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Keys that are missing or malformed for the currently selected mode.
+     *
+     * @return string[] Setting names. Empty when the active mode is fully configured.
+     */
+    public function get_unusable_keys(): array {
+        return Novac_Validator::get_unusable_keys( $this->settings, 'yes' === $this->go_live );
+    }
+
+    /**
+     * The total that would be charged in the current request context.
+     *
+     * Falls back through the order being paid for, then the cart. Returns 0.0
+     * when neither is available (admin screens, REST requests), which callers
+     * treat as "no amount to check".
+     *
+     * @return array{total: float, currency: string}
+     */
+    protected function get_current_charge(): array {
+        $order_id = absint( get_query_var( 'order-pay' ) );
+
+        if ( $order_id > 0 ) {
+            $order = wc_get_order( $order_id );
+
+            if ( $order instanceof WC_Order ) {
+                return array(
+                    'total'    => (float) $order->get_total(),
+                    'currency' => $order->get_currency(),
+                );
+            }
+        }
+
+        if ( function_exists( 'WC' ) && WC()->cart && ! WC()->cart->is_empty() ) {
+            return array(
+                'total'    => (float) WC()->cart->get_total( 'edit' ),
+                'currency' => get_woocommerce_currency(),
+            );
+        }
+
+        return array(
+            'total'    => 0.0,
+            'currency' => get_woocommerce_currency(),
+        );
+    }
+
+    /**
+     * Whether the amount in play clears the minimum for its currency.
+     *
+     * @return bool
+     */
+    protected function current_total_meets_minimum(): bool {
+        $charge = $this->get_current_charge();
+
+        return Novac_Validator::meets_minimum_amount( $charge['total'], $charge['currency'] );
+    }
+
+    /**
+     * Show a notice when Novac is hidden purely because the total is too low.
+     *
+     * Without this the customer sees a checkout with no Novac option and no
+     * explanation — the silent failure described in NOVAC-02.
+     *
+     * @return void
+     */
+    public function minimum_amount_notice(): void {
+        if ( 'yes' !== $this->enabled || ! empty( $this->get_unusable_keys() ) ) {
+            return;
+        }
+
+        $charge = $this->get_current_charge();
+
+        if ( Novac_Validator::meets_minimum_amount( $charge['total'], $charge['currency'] ) ) {
+            return;
+        }
+
+        $minimum = Novac_Validator::get_minimum_amount( $charge['currency'] );
+
+        if ( null === $minimum ) {
+            return;
+        }
+
+        wc_print_notice(
+            sprintf(
+                /* translators: 1: payment method title, e.g. "Novac". 2: formatted minimum amount, e.g. "₦100.00". */
+                esc_html__( '%1$s is unavailable for this order because the total is below the %2$s minimum. Add a little more to your basket to pay with %1$s, or choose another payment method.', 'novac-woo' ),
+                esc_html( $this->title ),
+                wp_strip_all_tags( wc_price( $minimum, array( 'currency' => $charge['currency'] ) ) )
+            ),
+            'notice'
+        );
     }
 
     /**
@@ -300,6 +422,19 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
         // For inline Checkout.
         $order = wc_get_order( $order_id );
 
+        $configuration_error = $this->get_configuration_error( $order );
+
+        if ( null !== $configuration_error ) {
+            wc_add_notice( $configuration_error['customer'], 'error' );
+            $this->logger->error( 'Novac: Refusing to render the payment modal for order ' . $order_id . '. ' . $configuration_error['log'] );
+            $order->add_order_note( $configuration_error['log'] );
+
+            return array(
+                'result'   => 'fail',
+                'redirect' => wc_get_checkout_url(),
+            );
+        }
+
         $custom_nonce = wp_create_nonce();
         $this->logger->info( 'Rendering Payment Modal' );
 
@@ -339,14 +474,27 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
 
         $order = wc_get_order( $order_id );
 
+        $configuration_error = $this->get_configuration_error( $order );
+
+        if ( null !== $configuration_error ) {
+            wc_add_notice( $configuration_error['customer'], 'error' );
+            $this->logger->error( 'Novac: Refusing to start payment for order ' . $order_id . '. ' . $configuration_error['log'] );
+            $order->add_order_note( $configuration_error['log'] );
+
+            return array(
+                'result'   => 'fail',
+                'redirect' => $order->get_checkout_payment_url( true ),
+            );
+        }
+
         try {
             $novac_request = ( new Novac_Request() )->get_prepared_payload( $order, $this->get_secret_key() );
             update_post_meta( $order_id, '_novac_txn_ref', $novac_request['reference']);
             $this->logger->info( 'Novac: Generating Payment link for order :' . $order_id );
         } catch ( \InvalidArgumentException $novac_request_error ) {
-            wc_add_notice( $novac_request_error, 'error' );
+            wc_add_notice( esc_html( $novac_request_error->getMessage() ), 'error' );
             // redirect user to check out page.
-            $this->logger->error( 'Novac: Failed in Generating Payment link for order :' . $order_id );
+            $this->logger->error( 'Novac: Failed in Generating Payment link for order :' . $order_id . '. ' . $novac_request_error->getMessage() );
             return array(
                 'result'   => 'fail',
                 'redirect' => $order->get_checkout_payment_url( true ),
@@ -392,24 +540,149 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
 
         $response = wp_safe_remote_request( $this->base_url . 'initiate', $args );
 
-        if ( ! is_wp_error( $response ) ) {
-            // TODO: Get customer id.
-            $this->logger->info( 'Novac: redirecting customer to the payment link :' . $response->data->paymentRedirectUrl );
-            $this->logger->info( $response['body'] );
-            $response = json_decode( $response['body'] );
-            return array(
-                'result'   => 'success',
-                'redirect' => $response->data->paymentRedirectUrl,
+        $failure = array(
+            'result'   => 'fail',
+            'redirect' => $order->get_checkout_payment_url( true ),
+        );
+
+        if ( is_wp_error( $response ) ) {
+            wc_add_notice( esc_html__( 'We could not reach Novac to start your payment. Please try again in a moment, or choose another payment method.', 'novac-woo' ), 'error' );
+            $this->logger->error( 'Novac: Unable to Connect to Novac for order ' . $order_id . '. Transport error: ' . $response->get_error_message() );
+            $order->add_order_note( esc_html__( 'Novac: could not be reached to start the payment. See the Novac log for details.', 'novac-woo' ) );
+
+            return $failure;
+        }
+
+        $http_code     = (int) wp_remote_retrieve_response_code( $response );
+        $response_body = wp_remote_retrieve_body( $response );
+        $decoded       = json_decode( $response_body );
+
+        $this->logger->info( 'Novac: initiate response for order ' . $order_id . ' (HTTP ' . $http_code . '): ' . $response_body );
+
+        // Novac rejected the request. Surface its reason instead of failing generically.
+        if ( $http_code < 200 || $http_code >= 300 ) {
+            $api_message = Novac_Validator::extract_api_message( $response_body );
+
+            if ( in_array( $http_code, array( 401, 403 ), true ) ) {
+                // A credential problem is the merchant's to fix, so do not blame the customer's card.
+                wc_add_notice( esc_html__( 'Novac is not correctly configured for this store, so your payment could not be started. Please contact us — no payment has been taken.', 'novac-woo' ), 'error' );
+                $this->logger->error( 'Novac: initiate rejected for order ' . $order_id . ' with HTTP ' . $http_code . ' — the API keys were refused. ' . $api_message );
+                $order->add_order_note(
+                    sprintf(
+                        /* translators: 1: HTTP status code. 2: message returned by the Novac API. */
+                        esc_html__( 'Novac: payment could not be started because the API rejected the store credentials (HTTP %1$s). %2$s', 'novac-woo' ),
+                        $http_code,
+                        esc_html( $api_message )
+                    )
+                );
+
+                return $failure;
+            }
+
+            wc_add_notice(
+                $api_message
+                    ? sprintf(
+                        /* translators: %s: message returned by the Novac API. */
+                        esc_html__( 'Novac could not start this payment: %s', 'novac-woo' ),
+                        esc_html( $api_message )
+                    )
+                    : esc_html__( 'Novac could not start this payment. Please try again, or choose another payment method.', 'novac-woo' ),
+                'error'
             );
-        } else {
-            wc_add_notice( 'Unable to Connect to Novac.', 'error' );
-            $this->logger->error( 'Novac: Unable to Connect to Novac. API Response: ' . $response->get_error_message() );
-            // redirect user to checkout page.
+            $this->logger->error( 'Novac: initiate failed for order ' . $order_id . ' with HTTP ' . $http_code . '. ' . $api_message );
+            $order->add_order_note(
+                sprintf(
+                    /* translators: 1: HTTP status code. 2: message returned by the Novac API. */
+                    esc_html__( 'Novac: payment initiation failed (HTTP %1$s). %2$s', 'novac-woo' ),
+                    $http_code,
+                    esc_html( $api_message )
+                )
+            );
+
+            return $failure;
+        }
+
+        $redirect_url = $decoded->data->paymentRedirectUrl ?? '';
+
+        // A 2xx with no redirect URL is still a failure — do not send the customer to an empty URL.
+        if ( empty( $redirect_url ) ) {
+            $api_message = Novac_Validator::extract_api_message( $response_body );
+
+            wc_add_notice(
+                $api_message
+                    ? sprintf(
+                        /* translators: %s: message returned by the Novac API. */
+                        esc_html__( 'Novac could not start this payment: %s', 'novac-woo' ),
+                        esc_html( $api_message )
+                    )
+                    : esc_html__( 'Novac did not return a payment page for this order. Please try again, or choose another payment method.', 'novac-woo' ),
+                'error'
+            );
+            $this->logger->error( 'Novac: initiate returned HTTP ' . $http_code . ' for order ' . $order_id . ' but no paymentRedirectUrl. Body: ' . $response_body );
+            $order->add_order_note( esc_html__( 'Novac: no payment link was returned for this order. See the Novac log for the full response.', 'novac-woo' ) );
+
+            return $failure;
+        }
+
+        $this->logger->info( 'Novac: redirecting customer to the payment link :' . $redirect_url );
+
+        return array(
+            'result'   => 'success',
+            'redirect' => $redirect_url,
+        );
+    }
+
+    /**
+     * Check the gateway can actually charge this order before contacting Novac.
+     *
+     * Returns a customer-facing message and a separate diagnostic message for
+     * the merchant, so a configuration problem is never reported to the
+     * customer as a payment failure.
+     *
+     * @param WC_Order $order The order about to be paid for.
+     * @return array{customer: string, log: string}|null Null when the order can be charged.
+     */
+    protected function get_configuration_error( WC_Order $order ): ?array {
+        $unusable = $this->get_unusable_keys();
+
+        if ( ! empty( $unusable ) ) {
+            $labels = array_map( array( 'Novac_Validator', 'get_key_label' ), $unusable );
+
             return array(
-                'result'   => 'fail',
-                'redirect' => $order->get_checkout_payment_url( true ),
+                'customer' => esc_html__( 'Novac is not available for this store yet. Please contact us or choose another payment method — no payment has been taken.', 'novac-woo' ),
+                'log'      => sprintf(
+                    /* translators: 1: live/test mode. 2: comma-separated list of key names. */
+                    esc_html__( 'Novac: the gateway is enabled in %1$s mode but these keys are missing or malformed: %2$s. Set them on the Novac settings page.', 'novac-woo' ),
+                    'yes' === $this->go_live ? 'live' : 'test',
+                    implode( ', ', $labels )
+                ),
             );
         }
+
+        $currency = $order->get_currency();
+        $total    = (float) $order->get_total();
+
+        if ( ! Novac_Validator::meets_minimum_amount( $total, $currency ) ) {
+            $minimum = (float) Novac_Validator::get_minimum_amount( $currency );
+
+            return array(
+                'customer' => sprintf(
+                    /* translators: 1: payment method title. 2: formatted minimum amount. */
+                    esc_html__( '%1$s cannot process this order because the total is below the %2$s minimum. Please choose another payment method.', 'novac-woo' ),
+                    esc_html( $this->title ),
+                    wp_strip_all_tags( wc_price( $minimum, array( 'currency' => $currency ) ) )
+                ),
+                'log'      => sprintf(
+                    /* translators: 1: order total. 2: minimum amount. 3: currency code. */
+                    esc_html__( 'Novac: order total %1$s is below the %2$s minimum chargeable amount for %3$s.', 'novac-woo' ),
+                    $total,
+                    $minimum,
+                    $currency
+                ),
+            );
+        }
+
+        return null;
     }
 
     /**
@@ -419,17 +692,35 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
      */
     public function admin_notices(): void {
 
-        if ( 'yes' === $this->enabled ) {
-
-            if ( empty( $this->public_key ) || empty( $this->secret_key ) ) {
-
-                $message = sprintf(
-                /* translators: %s: url */
-                    __( 'For Novac on appear on checkout. Please <a href="%s">set your Novac API keys</a> to be able to accept payments.', 'novac-woo' ),
-                    esc_url( admin_url( 'admin.php?page=wc-settings&tab=checkout&section=novac' ) )
-                );
-            }
+        if ( 'yes' !== $this->enabled ) {
+            return;
         }
+
+        $unusable = $this->get_unusable_keys();
+
+        if ( empty( $unusable ) ) {
+            return;
+        }
+
+        $labels = array_map( array( 'Novac_Validator', 'get_key_label' ), $unusable );
+
+        $message = sprintf(
+            /* translators: 1: comma-separated list of key names. 2: settings page url. */
+            __( '<strong>Novac is enabled but not usable.</strong> The following must be set correctly before Novac can appear at checkout: %1$s. <a href="%2$s">Review your Novac settings</a>.', 'novac-woo' ),
+            esc_html( implode( ', ', $labels ) ),
+            esc_url( admin_url( 'admin.php?page=wc-admin&path=%2Fnovac' ) )
+        );
+
+        printf(
+            '<div class="notice notice-error"><p>%s</p></div>',
+            wp_kses(
+                $message,
+                array(
+                    'strong' => array(),
+                    'a'      => array( 'href' => array() ),
+                )
+            )
+        );
     }
 
     /**

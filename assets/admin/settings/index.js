@@ -1,6 +1,6 @@
 import { registerPlugin } from "@wordpress/plugins";
 import { addFilter } from "@wordpress/hooks";
-import { __ } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 import { useState } from '@wordpress/element';
 import { Fragment } from '@wordpress/element';
 import {
@@ -98,36 +98,109 @@ const Dot = ({ color }) => (
     }} />
 );
 
-const NovacStatusBar = ({ isEnabled, isLive }) => (
-    <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '14px',
-        padding: '12px 20px',
-        background: C.navy,
-        border: `1px solid ${C.border}`,
-        borderRadius: '8px',
-        marginBottom: '16px',
-    }}>
-        <span style={{
-            fontSize: '11px', fontWeight: 700,
-            textTransform: 'uppercase', letterSpacing: '0.6px',
-            color: C.muted, flexShrink: 0,
+const NovacStatusBar = ({ isEnabled, isLive, readiness }) => {
+    // "Active" must mean "actually offered at checkout". When keys are missing
+    // the gateway is hidden, so say so rather than showing a green light.
+    const notReady = isEnabled && !! readiness;
+
+    let statusStyle = badge(C.redDim, C.red, C.redBorder);
+    let statusColor = C.red;
+    let statusLabel = __( 'Inactive', 'novac-woo' );
+
+    if ( notReady ) {
+        statusStyle = badge(C.orangeDim, C.orange, C.orangeBorder);
+        statusColor = C.orange;
+        statusLabel = __( 'Not at checkout', 'novac-woo' );
+    } else if ( isEnabled ) {
+        statusStyle = badge(C.greenDim, C.green, C.greenBorder);
+        statusColor = C.green;
+        statusLabel = __( 'Active', 'novac-woo' );
+    }
+
+    return (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '14px',
+            padding: '12px 20px',
+            background: C.navy,
+            border: `1px solid ${C.border}`,
+            borderRadius: '8px',
+            marginBottom: '16px',
         }}>
-            { __( 'Status', 'novac-woo' ) }
-        </span>
+            <span style={{
+                fontSize: '11px', fontWeight: 700,
+                textTransform: 'uppercase', letterSpacing: '0.6px',
+                color: C.muted, flexShrink: 0,
+            }}>
+                { __( 'Status', 'novac-woo' ) }
+            </span>
 
-        <span style={ badge(isEnabled ? C.greenDim : C.redDim, isEnabled ? C.green : C.red, isEnabled ? C.greenBorder : C.redBorder) }>
-            <Dot color={ isEnabled ? C.green : C.red } />
-            { isEnabled ? __( 'Active', 'novac-woo' ) : __( 'Inactive', 'novac-woo' ) }
-        </span>
+            <span style={ statusStyle }>
+                <Dot color={ statusColor } />
+                { statusLabel }
+            </span>
 
-        <span style={ badge(isLive ? C.greenDim : C.orangeDim, isLive ? C.green : C.orange, isLive ? C.greenBorder : C.orangeBorder) }>
-            <Dot color={ isLive ? C.green : C.orange } />
-            { isLive ? __( 'Live Mode', 'novac-woo' ) : __( 'Test Mode', 'novac-woo' ) }
-        </span>
-    </div>
-);
+            <span style={ badge(isLive ? C.greenDim : C.orangeDim, isLive ? C.green : C.orange, isLive ? C.greenBorder : C.orangeBorder) }>
+                <Dot color={ isLive ? C.green : C.orange } />
+                { isLive ? __( 'Live Mode', 'novac-woo' ) : __( 'Test Mode', 'novac-woo' ) }
+            </span>
+        </div>
+    );
+};
+
+/**
+ * Always-visible warning naming exactly which keys are missing and where they live.
+ *
+ * The panels are collapsible, so this sits above them: a merchant filling in
+ * live keys must not have to open the Test Mode accordion to discover why the
+ * gateway still is not appearing at checkout.
+ *
+ * @param {Object} props           Component props.
+ * @param {Object} props.readiness Result of getReadiness(), or null.
+ */
+const NovacReadinessWarning = ({ readiness }) => {
+    if ( ! readiness ) {
+        return null;
+    }
+
+    const { isLive, labels } = readiness;
+
+    const where = isLive
+        ? __( 'Add them under "API/Webhook Settings".', 'novac-woo' )
+        : __( 'Add them under "Test Mode" below, or switch to Live mode if you are using live keys.', 'novac-woo' );
+
+    return (
+        <div
+            role="status"
+            style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '10px',
+                margin: '0 0 16px',
+                padding: '12px 16px',
+                background: '#fffbf0',
+                borderLeft: `3px solid ${ C.orange }`,
+                borderRadius: '0 5px 5px 0',
+                fontSize: '13px',
+                lineHeight: 1.55,
+                color: '#7a5200',
+            }}
+        >
+            <span aria-hidden="true" style={{ fontWeight: 700, flexShrink: 0 }}>!</span>
+            <span>
+                <strong>
+                    { sprintf(
+                        /* translators: %s: live or test. */
+                        __( 'Novac is switched on but is not appearing at checkout, because you are in %s mode and these are missing:', 'novac-woo' ),
+                        isLive ? __( 'Live', 'novac-woo' ) : __( 'Test', 'novac-woo' )
+                    ) }
+                </strong>
+                { ` ${ labels.join( ', ' ) }. ${ where }` }
+            </span>
+        </div>
+    );
+};
 
 const NovacWebhookBox = ({ url }) => {
     const [copied, setCopied] = useState(false);
@@ -251,6 +324,47 @@ const TestModeButton = ({ onClick, isLive }) => {
     );
 };
 
+/**
+ * Inline result banner for save and credential-verification outcomes.
+ *
+ * @param {Object} props         Component props.
+ * @param {string} props.status  One of success|error|warning.
+ * @param {string} props.message Message to display.
+ */
+const NovacResultBanner = ({ status, message }) => {
+    if ( ! message ) {
+        return null;
+    }
+
+    const palette = {
+        success: { bg: '#f0f8ea', border: '#7ba428', text: '#3c5215', icon: '✓' },
+        error:   { bg: '#fdf0f0', border: '#d63638', text: '#8a1f21', icon: '✕' },
+        warning: { bg: '#fffbf0', border: C.orange, text: '#7a5200', icon: '!' },
+    }[ status ] ?? { bg: '#f0f6fc', border: '#72aee6', text: '#1d3c56', icon: 'i' };
+
+    return (
+        <div
+            role={ status === 'error' ? 'alert' : 'status' }
+            style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '10px',
+                margin: '0 0 16px',
+                padding: '11px 14px',
+                background: palette.bg,
+                borderLeft: `3px solid ${ palette.border }`,
+                borderRadius: '0 5px 5px 0',
+                fontSize: '13px',
+                lineHeight: 1.5,
+                color: palette.text,
+            }}
+        >
+            <span aria-hidden="true" style={{ fontWeight: 700, flexShrink: 0 }}>{ palette.icon }</span>
+            <span>{ message }</span>
+        </div>
+    );
+};
+
 const PanelActions = ({ children }) => (
     <div style={{ marginTop: '22px', display: 'flex', justifyContent: 'flex-end' }}>
         { children }
@@ -263,22 +377,170 @@ const SectionHint = ({ children }) => (
     </p>
 );
 
+// ─── Validation ───────────────────────────────────────────────────────────────
+// Mirrors Novac_Validator on the PHP side. Each field has its own prefix — a
+// live field must not accept a test key, which is a common cause of a gateway
+// that looks configured but is rejected at payment time.
+const KEY_PREFIXES = {
+    live_public_key: 'nc_livepk_',
+    live_secret_key: 'nc_livesk_',
+    test_public_key: 'nc_testpk_',
+    test_secret_key: 'nc_testsk_',
+};
+
+const KEY_LABELS = {
+    live_public_key: __( 'Live Public Key', 'novac-woo' ),
+    live_secret_key: __( 'Live Secret Key', 'novac-woo' ),
+    test_public_key: __( 'Test Public Key', 'novac-woo' ),
+    test_secret_key: __( 'Test Secret Key', 'novac-woo' ),
+};
+
+const KEY_MIN_LENGTH = 20;
+
+/**
+ * Validate one key field.
+ *
+ * @param {string}  settingKey One of the four key setting names.
+ * @param {string}  value      The current field value.
+ * @param {boolean} required   Whether an empty value is an error.
+ * @return {string} An error message, or '' when the value is acceptable.
+ */
+const validateKey = ( settingKey, value, required = true ) => {
+    const prefix = KEY_PREFIXES[ settingKey ];
+
+    if ( ! prefix ) {
+        return '';
+    }
+
+    const trimmed = ( value ?? '' ).trim();
+    const label   = KEY_LABELS[ settingKey ] ?? settingKey;
+
+    if ( ! trimmed ) {
+        return required
+            ? sprintf( /* translators: %s: field name. */ __( '%s is required.', 'novac-woo' ), label )
+            : '';
+    }
+
+    if ( ! trimmed.startsWith( prefix ) ) {
+        return sprintf(
+            /* translators: 1: field name. 2: expected prefix. */
+            __( '%1$s should start with "%2$s".', 'novac-woo' ),
+            label,
+            prefix
+        );
+    }
+
+    if ( trimmed.length < KEY_MIN_LENGTH ) {
+        return sprintf(
+            /* translators: %s: field name. */
+            __( '%s looks incomplete — copy the whole key.', 'novac-woo' ),
+            label
+        );
+    }
+
+    return '';
+};
+
+// Key fields owned by each panel. A panel's save button only validates its own
+// fields — a missing test key must never block saving live keys, because the
+// two live behind separate save buttons in separate accordions.
+const PANEL_KEY_FIELDS = {
+    api:      [ 'live_secret_key', 'live_public_key' ],
+    test:     [ 'test_secret_key', 'test_public_key' ],
+    checkout: [],
+};
+
+/**
+ * Validate the key fields belonging to one panel.
+ *
+ * Only the format is checked. An empty field is not an error here: whether the
+ * gateway has what it needs is reported by getReadiness() as a warning, and
+ * enforced for real by the gateway's is_available() on the server.
+ *
+ * @param {Object} settings The settings about to be saved.
+ * @param {Array}  fields   Key field names owned by the saving panel.
+ * @return {Object} Map of field name to error message. Empty when valid.
+ */
+const validatePanel = ( settings, fields ) => {
+    const errors = {};
+
+    fields.forEach( ( settingKey ) => {
+        const message = validateKey( settingKey, settings[ settingKey ], false );
+
+        if ( message ) {
+            errors[ settingKey ] = message;
+        }
+    } );
+
+    return errors;
+};
+
+/**
+ * Report whether Novac can actually appear at checkout.
+ *
+ * @param {Object} settings The current settings.
+ * @return {Object|null} Details of what is missing, or null when ready.
+ */
+const getReadiness = ( settings ) => {
+    if ( settings.enabled !== 'yes' ) {
+        return null;
+    }
+
+    const isLive   = settings.go_live === 'yes';
+    const required = isLive
+        ? [ 'live_public_key', 'live_secret_key' ]
+        : [ 'test_public_key', 'test_secret_key' ];
+
+    const missing = required.filter(
+        ( settingKey ) => validateKey( settingKey, settings[ settingKey ], true ) !== ''
+    );
+
+    if ( missing.length === 0 ) {
+        return null;
+    }
+
+    return {
+        isLive,
+        missing,
+        labels: missing.map( ( settingKey ) => KEY_LABELS[ settingKey ] ?? settingKey ),
+    };
+};
+
 // ─── Save helper ──────────────────────────────────────────────────────────────
-const saveSettings = (data, setIsBusy) => {
+/**
+ * Persist settings, refusing to send a payload the server would reject.
+ *
+ * @param {Object}   data      The settings to save.
+ * @param {Function} setIsBusy Busy-state setter from the save button.
+ * @param {Object}   handlers  onInvalid/onError/onSuccess callbacks.
+ * @param {Array}    fields    Key field names owned by the saving panel.
+ */
+const saveSettings = ( data, setIsBusy, handlers = {}, fields = [] ) => {
+    const { onInvalid, onError, onSuccess } = handlers;
+
+    const errors = validatePanel( data, fields );
+
+    if ( Object.keys( errors ).length > 0 ) {
+        onInvalid?.( errors );
+        setIsBusy( false );
+        return;
+    }
+
     apiFetch({
         path: NAMESPACE + ENDPOINT,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': wpApiSettings.nonce },
         data,
     })
-        .then(() => setIsBusy(false))
-        .catch((err) => { console.error('Novac: error saving settings', err); setIsBusy(false); });
-};
-
-const validateKey = (key, type) => {
-    if (type === 'public') return key.startsWith('nc_livepk_') || key.startsWith('nc_testpk_');
-    if (type === 'secret') return key.startsWith('nc_livesk_') || key.startsWith('nc_testsk_');
-    return false;
+        .then( ( response ) => {
+            onSuccess?.( response );
+            setIsBusy( false );
+        } )
+        .catch( ( err ) => {
+            console.error( 'Novac: error saving settings', err );
+            onError?.( err );
+            setIsBusy( false );
+        } );
 };
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -292,20 +554,91 @@ const NovacSettings = () => {
         live_secret_key: '', live_public_key: '',
         test_secret_key: '', test_public_key: '',
     });
+    const [banner, setBanner] = useState(null);
+    // Which panel a banner belongs to, so a save result is reported next to the
+    // button that triggered it rather than in all three panels at once.
+    const [activePanel, setActivePanel] = useState(null);
 
     const handleChange = (key, value) =>
         setNovacSettings(prev => ({ ...prev, [key]: value }));
 
-    const handleKeyChange = (key, value, type) => {
+    const handleKeyChange = (key, value) => {
         handleChange(key, value);
-        setErrors(prev => ({
-            ...prev,
-            [key]: validateKey(value, type) ? '' : 'Invalid key format',
-        }));
+        // Flag a bad format as it is typed, but do not nag about an empty field
+        // until the merchant actually tries to save.
+        setErrors(prev => ({ ...prev, [key]: validateKey(key, value, false) }));
+    };
+
+    /**
+     * Save handler shared by every panel: validates, then reports the outcome.
+     *
+     * Validation is scoped to the panel doing the saving, so one panel's blank
+     * fields can never block another panel's save button.
+     *
+     * @param {string}   panel     Which panel is saving: api|test|checkout.
+     * @param {Function} setIsBusy Busy-state setter from the save button.
+     * @param {Object}   overrides Settings to merge before saving.
+     */
+    const handleSave = (panel, setIsBusy, overrides = {}) => {
+        const payload = { ...novacSettings, ...overrides };
+        const fields  = PANEL_KEY_FIELDS[ panel ] ?? [];
+
+        setBanner(null);
+        setActivePanel(panel);
+
+        saveSettings(payload, setIsBusy, {
+            onInvalid: (fieldErrors) => {
+                setErrors(prev => ({ ...prev, ...fieldErrors }));
+                setBanner({
+                    status: 'error',
+                    message: __( 'Nothing was saved. Please correct the highlighted fields.', 'novac-woo' ),
+                });
+            },
+            onError: (err) => {
+                setBanner({
+                    status: 'error',
+                    message: err?.message
+                        || __( 'Novac could not save your settings. Please try again.', 'novac-woo' ),
+                });
+            },
+            onSuccess: (response) => {
+                // Only clear the errors this panel is responsible for.
+                setErrors(prev => {
+                    const next = { ...prev };
+                    fields.forEach((settingKey) => { next[settingKey] = ''; });
+                    return next;
+                });
+
+                const verification = response?.verification;
+
+                // A save that succeeded but whose credentials Novac rejected is
+                // the case that used to reach the customer as a checkout error.
+                if ( verification?.status === 'fail' ) {
+                    setBanner({ status: 'error', message: verification.message });
+                } else if ( verification?.status === 'unknown' ) {
+                    setBanner({ status: 'warning', message: verification.message });
+                } else if ( verification?.status === 'pass' ) {
+                    setBanner({
+                        status: 'success',
+                        message: __( 'Settings saved. Novac verified your credentials.', 'novac-woo' ),
+                    });
+                } else if ( verification?.status === 'skipped' ) {
+                    setBanner({ status: 'success', message: verification.message });
+                } else {
+                    setBanner({ status: 'success', message: __( 'Settings saved.', 'novac-woo' ) });
+                }
+            },
+        }, fields);
     };
 
     const isLive    = novacSettings.go_live === 'yes';
     const isEnabled = novacSettings.enabled === 'yes';
+    const readiness = getReadiness( novacSettings );
+
+    const panelBanner = ( panel ) =>
+        activePanel === panel
+            ? <NovacResultBanner status={ banner?.status } message={ banner?.message } />
+            : null;
 
     return (
         <Fragment>
@@ -313,17 +646,23 @@ const NovacSettings = () => {
 
                 <NovacHero firstName={ firstName } pluginUrl={ pluginUrl } />
 
-                <NovacStatusBar isEnabled={ isEnabled } isLive={ isLive } />
+                <NovacStatusBar isEnabled={ isEnabled } isLive={ isLive } readiness={ readiness } />
+
+                <NovacReadinessWarning readiness={ readiness } />
 
                 {/* ── API & Webhook ── */}
                 <Panel>
                     <PanelBody title={ strings.settings.general } initialOpen={ true }>
 
+                        { panelBanner('api') }
+
                         <div style={{ paddingBottom: '18px', borderBottom: '1px solid #eee', marginBottom: '20px' }}>
                             <ToggleControl
                                 checked={ isEnabled }
                                 label={ __( 'Enable Novac Payments', 'novac-woo' ) }
-                                help={ __( 'Allow customers to pay with Novac at checkout.', 'novac-woo' ) }
+                                help={ isLive
+                                    ? __( 'Allow customers to pay with Novac at checkout. Uses your live keys.', 'novac-woo' )
+                                    : __( 'Allow customers to pay with Novac at checkout. You are in test mode, so the test keys under "Test Mode" are the ones used.', 'novac-woo' ) }
                                 onChange={ () => handleChange('enabled', isEnabled ? 'no' : 'yes') }
                             />
                         </div>
@@ -331,21 +670,25 @@ const NovacSettings = () => {
                         <Input
                             labelName={ __( 'Live Secret Key', 'novac-woo' ) }
                             initialValue={ novacSettings.live_secret_key }
-                            onChange={ v => handleKeyChange('live_secret_key', v, 'secret') }
+                            onChange={ v => handleKeyChange('live_secret_key', v) }
                             isConfidential
+                            isRequired={ isEnabled && isLive }
+                            help={ __( 'Starts with nc_livesk_', 'novac-woo' ) }
                             error={ errors.live_secret_key }
                         />
                         <Input
                             labelName={ __( 'Live Public Key', 'novac-woo' ) }
                             initialValue={ novacSettings.live_public_key }
-                            onChange={ v => handleKeyChange('live_public_key', v, 'public') }
+                            onChange={ v => handleKeyChange('live_public_key', v) }
+                            isRequired={ isEnabled && isLive }
+                            help={ __( 'Starts with nc_livepk_', 'novac-woo' ) }
                             error={ errors.live_public_key }
                         />
 
                         <NovacWebhookBox url={ novacData.novac_webhook } />
 
                         <PanelActions>
-                            <NovacSaveButton onClick={ setIsBusy => saveSettings(novacSettings, setIsBusy) }>
+                            <NovacSaveButton onClick={ setIsBusy => handleSave('api', setIsBusy) }>
                                 { strings.button.save_settings }
                             </NovacSaveButton>
                         </PanelActions>
@@ -355,6 +698,8 @@ const NovacSettings = () => {
                 {/* ── Checkout Settings ── */}
                 <Panel>
                     <PanelBody title={ strings.settings.checkout } initialOpen={ false }>
+                        { panelBanner('checkout') }
+
                         <SectionHint>
                             { __( 'Configure how Novac behaves on the checkout page.', 'novac-woo' ) }
                         </SectionHint>
@@ -395,7 +740,7 @@ const NovacSettings = () => {
                         />
 
                         <PanelActions>
-                            <NovacSaveButton onClick={ setIsBusy => saveSettings(novacSettings, setIsBusy) }>
+                            <NovacSaveButton onClick={ setIsBusy => handleSave('checkout', setIsBusy) }>
                                 { strings.button.save_settings }
                             </NovacSaveButton>
                         </PanelActions>
@@ -416,32 +761,37 @@ const NovacSettings = () => {
                             { strings.sandboxMode.description }
                         </div>
 
+                        { panelBanner('test') }
+
                         <Input
                             labelName={ __( 'Test Secret Key', 'novac-woo' ) }
                             initialValue={ novacSettings.test_secret_key }
-                            onChange={ v => handleKeyChange('test_secret_key', v, 'secret') }
+                            onChange={ v => handleKeyChange('test_secret_key', v) }
                             isConfidential
+                            isRequired={ isEnabled && ! isLive }
+                            help={ __( 'Starts with nc_testsk_', 'novac-woo' ) }
                             error={ errors.test_secret_key }
                         />
                         <Input
                             labelName={ __( 'Test Public Key', 'novac-woo' ) }
                             initialValue={ novacSettings.test_public_key }
-                            onChange={ v => handleKeyChange('test_public_key', v, 'public') }
+                            onChange={ v => handleKeyChange('test_public_key', v) }
+                            isRequired={ isEnabled && ! isLive }
+                            help={ __( 'Starts with nc_testpk_', 'novac-woo' ) }
                             error={ errors.test_public_key }
                         />
 
                         <PanelActions>
                             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                                <NovacSaveButton onClick={ setIsBusy => saveSettings(novacSettings, setIsBusy) }>
+                                <NovacSaveButton onClick={ setIsBusy => handleSave('test', setIsBusy) }>
                                     { strings.button.save_settings }
                                 </NovacSaveButton>
                                 <TestModeButton
                                     isLive={ isLive }
                                     onClick={ () => {
-                                        const next    = isLive ? 'no' : 'yes';
-                                        const updated = { ...novacSettings, go_live: next };
-                                        setNovacSettings(updated);
-                                        saveSettings(updated, () => {});
+                                        const next = isLive ? 'no' : 'yes';
+                                        setNovacSettings( prev => ({ ...prev, go_live: next }) );
+                                        handleSave( 'test', () => {}, { go_live: next } );
                                     } }
                                 />
                             </div>

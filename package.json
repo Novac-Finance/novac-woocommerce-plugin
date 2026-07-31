@@ -1,6 +1,6 @@
 {
   "name": "novac-woo",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Novac for WooCommerce",
   "main": "index.js",
   "repository": {

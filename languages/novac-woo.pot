@@ -2,14 +2,14 @@
 # This file is distributed under the GNU General Public License v3.0.
 msgid ""
 msgstr ""
-"Project-Id-Version: Novac Woo 1.0.0\n"
+"Project-Id-Version: Novac Woo 1.0.1\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/novac-woo\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-05-23T10:48:33+00:00\n"
+"POT-Creation-Date: 2026-07-31T10:37:45+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: novac-woo\n"
@@ -32,6 +32,7 @@ msgstr ""
 #. Author of the plugin
 #. Translators: %s Plugin name.
 #: novac-woo.php
+#: inc/block/class-novac-block-support.php:147
 #: inc/class-novac.php:157
 #: inc/views/html-admin-missing-woocommerce.php:15
 #: assets/blocks/payment-method/index.js:32
@@ -43,259 +44,397 @@ msgstr ""
 msgid "https://www.app.novacpayment.com"
 msgstr ""
 
-#: inc/block/class-novac-block-support.php:149
+#: inc/block/class-novac-block-support.php:161
 msgid "Visa"
 msgstr ""
 
-#: inc/block/class-novac-block-support.php:153
+#: inc/block/class-novac-block-support.php:165
 msgid "American Express"
 msgstr ""
 
-#: inc/block/class-novac-block-support.php:157
+#: inc/block/class-novac-block-support.php:169
 msgid "Mastercard"
 msgstr ""
 
-#: inc/block/class-novac-block-support.php:164
+#: inc/block/class-novac-block-support.php:176
 msgctxt "Name of credit card"
 msgid "Discover"
 msgstr ""
 
-#: inc/block/class-novac-block-support.php:168
+#: inc/block/class-novac-block-support.php:180
 msgid "JCB"
 msgstr ""
 
-#: inc/block/class-novac-block-support.php:172
+#: inc/block/class-novac-block-support.php:184
 msgid "Diners"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:111
+#: inc/class-novac-payment-gateway.php:119
 msgid "allows you to receive payments in multiple currencies."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:163
+#. translators: 1: payment method title, e.g. "Novac". 2: formatted minimum amount, e.g. "₦100.00".
+#: inc/class-novac-payment-gateway.php:287
+#, php-format
+msgid "%1$s is unavailable for this order because the total is below the %2$s minimum. Add a little more to your basket to pay with %1$s, or choose another payment method."
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:304
 msgid "Webhook Instruction"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:167
+#: inc/class-novac-payment-gateway.php:308
 msgid "Please add this webhook URL and paste on the webhook section on your dashboard"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:188
+#: inc/class-novac-payment-gateway.php:329
 msgid "Enable/Disable"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:189
+#: inc/class-novac-payment-gateway.php:330
 msgid "Enable Novac"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:191
+#: inc/class-novac-payment-gateway.php:332
 msgid "Enable Novac as a payment option on the checkout page"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:196
+#: inc/class-novac-payment-gateway.php:337
+#: assets/admin/settings/index.js:729
 msgid "Payment method title"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:198
-#: inc/class-novac-payment-gateway.php:204
+#: inc/class-novac-payment-gateway.php:339
+#: inc/class-novac-payment-gateway.php:345
 msgid "Optional"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:202
+#: inc/class-novac-payment-gateway.php:343
 msgid "Payment method description"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:208
+#: inc/class-novac-payment-gateway.php:349
+#: inc/util/class-novac-validator.php:71
+#: assets/admin/settings/index.js:394
+#: assets/admin/settings/index.js:776
 msgid "Test Public Key"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:210
+#: inc/class-novac-payment-gateway.php:351
 msgid "Required! Enter your Novac test public key here"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:214
+#: inc/class-novac-payment-gateway.php:355
+#: inc/util/class-novac-validator.php:72
+#: assets/admin/settings/index.js:395
+#: assets/admin/settings/index.js:767
 msgid "Test Secret Key"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:216
+#: inc/class-novac-payment-gateway.php:357
 msgid "Required! Enter your Novac test secret key here"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:220
+#: inc/class-novac-payment-gateway.php:361
+#: inc/util/class-novac-validator.php:69
+#: assets/admin/settings/index.js:392
+#: assets/admin/settings/index.js:680
 msgid "Live Public Key"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:222
+#: inc/class-novac-payment-gateway.php:363
 msgid "Required! Enter your Novac live public key here"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:226
+#: inc/class-novac-payment-gateway.php:367
+#: inc/util/class-novac-validator.php:70
+#: assets/admin/settings/index.js:393
+#: assets/admin/settings/index.js:671
 msgid "Live Secret Key"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:228
+#: inc/class-novac-payment-gateway.php:369
 msgid "Required! Enter your Novac live secret key here"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:232
+#: inc/class-novac-payment-gateway.php:373
 msgid "Autocomplete Order After Payment"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:233
+#: inc/class-novac-payment-gateway.php:374
 msgid "Autocomplete Order"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:236
+#: inc/class-novac-payment-gateway.php:377
 msgid "If enabled, the order will be marked as complete after successful payment"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:241
+#: inc/class-novac-payment-gateway.php:382
 msgid "Payment Style on checkout"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:243
+#: inc/class-novac-payment-gateway.php:384
 msgid "Optional - Choice of payment style to use. Either inline or redirect. (Default: inline)"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:245
+#: inc/class-novac-payment-gateway.php:386
 msgctxt "payment_style"
 msgid "Redirect"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:250
+#: inc/class-novac-payment-gateway.php:391
 msgid "Mode"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:251
+#: inc/class-novac-payment-gateway.php:392
 msgid "Live mode"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:253
+#: inc/class-novac-payment-gateway.php:394
 msgid "Check this box if you're using your live keys."
 msgstr ""
 
-#. translators: %s: url
+#: inc/class-novac-payment-gateway.php:399
+msgid "Buy Now Button"
+msgstr ""
+
 #: inc/class-novac-payment-gateway.php:400
+msgid "Show a \"Buy Now\" button on product pages"
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:402
+msgid "Adds a \"Buy Now\" button to product pages that skips the cart and goes directly to checkout."
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:549
+msgid "We could not reach Novac to start your payment. Please try again in a moment, or choose another payment method."
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:551
+msgid "Novac: could not be reached to start the payment. See the Novac log for details."
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:568
+msgid "Novac is not correctly configured for this store, so your payment could not be started. Please contact us — no payment has been taken."
+msgstr ""
+
+#. translators: 1: HTTP status code. 2: message returned by the Novac API.
+#: inc/class-novac-payment-gateway.php:573
 #, php-format
-msgid "For Novac on appear on checkout. Please <a href=\"%s\">set your Novac API keys</a> to be able to accept payments."
+msgid "Novac: payment could not be started because the API rejected the store credentials (HTTP %1$s). %2$s"
+msgstr ""
+
+#. translators: %s: message returned by the Novac API.
+#: inc/class-novac-payment-gateway.php:586
+#: inc/class-novac-payment-gateway.php:615
+#, php-format
+msgid "Novac could not start this payment: %s"
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:589
+msgid "Novac could not start this payment. Please try again, or choose another payment method."
+msgstr ""
+
+#. translators: 1: HTTP status code. 2: message returned by the Novac API.
+#: inc/class-novac-payment-gateway.php:596
+#, php-format
+msgid "Novac: payment initiation failed (HTTP %1$s). %2$s"
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:618
+msgid "Novac did not return a payment page for this order. Please try again, or choose another payment method."
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:622
+msgid "Novac: no payment link was returned for this order. See the Novac log for the full response."
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:652
+msgid "Novac is not available for this store yet. Please contact us or choose another payment method — no payment has been taken."
+msgstr ""
+
+#. translators: 1: live/test mode. 2: comma-separated list of key names.
+#: inc/class-novac-payment-gateway.php:655
+#, php-format
+msgid "Novac: the gateway is enabled in %1$s mode but these keys are missing or malformed: %2$s. Set them on the Novac settings page."
+msgstr ""
+
+#. translators: 1: payment method title. 2: formatted minimum amount.
+#: inc/class-novac-payment-gateway.php:671
+#, php-format
+msgid "%1$s cannot process this order because the total is below the %2$s minimum. Please choose another payment method."
+msgstr ""
+
+#. translators: 1: order total. 2: minimum amount. 3: currency code.
+#: inc/class-novac-payment-gateway.php:677
+#, php-format
+msgid "Novac: order total %1$s is below the %2$s minimum chargeable amount for %3$s."
+msgstr ""
+
+#. translators: 1: comma-separated list of key names. 2: settings page url.
+#: inc/class-novac-payment-gateway.php:709
+#, php-format
+msgid "<strong>Novac is enabled but not usable.</strong> The following must be set correctly before Novac can appear at checkout: %1$s. <a href=\"%2$s\">Review your Novac settings</a>."
 msgstr ""
 
 #. translators: %s: shop cart url
-#: inc/class-novac-payment-gateway.php:436
+#: inc/class-novac-payment-gateway.php:755
 #, php-format
 msgid "Sorry, your session has expired. <a href=\"%s\" class=\"wc-backward\">Return to shop</a>"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:450
-#: inc/class-novac-payment-gateway.php:548
+#: inc/class-novac-payment-gateway.php:769
+#: inc/class-novac-payment-gateway.php:867
 msgid "We were unable to process your order, please try again."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:497
+#: inc/class-novac-payment-gateway.php:816
 msgid "Order Payment"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:549
+#: inc/class-novac-payment-gateway.php:868
 msgid "Attention: Customer session expired. "
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:550
+#: inc/class-novac-payment-gateway.php:869
 msgid "Customer should try again. order has status is now pending payment."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:579
+#: inc/class-novac-payment-gateway.php:898
 msgid "verifying the Payment of Novac..."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:590
-#: inc/class-novac-payment-gateway.php:857
+#: inc/class-novac-payment-gateway.php:909
 msgid "The customer clicked on the cancel button on Checkout."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:592
-#: inc/class-novac-payment-gateway.php:859
+#: inc/class-novac-payment-gateway.php:911
 msgid "Attention: Customer clicked on the cancel button on the payment gateway. We have updated the order to cancelled status. "
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:602
-#: inc/class-novac-payment-gateway.php:866
+#: inc/class-novac-payment-gateway.php:921
 msgid "Payment Attempt Failed. Please Try Again."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:603
-#: inc/class-novac-payment-gateway.php:867
+#: inc/class-novac-payment-gateway.php:922
 msgid "Customer Payment Attempt failed. Advise customer to try again with a different Payment Method"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:614
-#: inc/class-novac-payment-gateway.php:877
+#: inc/class-novac-payment-gateway.php:933
 msgid "Payment Attempt Failed. Try Again"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:616
-#: inc/class-novac-payment-gateway.php:879
+#: inc/class-novac-payment-gateway.php:935
 msgid "Payment Failed "
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:618
-#: inc/class-novac-payment-gateway.php:880
-#: inc/class-novac-payment-gateway.php:889
+#: inc/class-novac-payment-gateway.php:937
 msgid "Reason: Non-Given"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:638
-#: inc/class-novac-payment-gateway.php:906
+#: inc/class-novac-payment-gateway.php:957
 msgid "The payment didn't return a valid response. It could have timed out or abandoned by the customer on Novac"
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:642
+#: inc/class-novac-payment-gateway.php:961
 msgid "Please, contact us for information regarding this order."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:643
-#: inc/class-novac-payment-gateway.php:908
-msgid "Attention: New order has been placed on hold because we could not get a definite response from the payment gateway. Kindly contact the Novac support team at developers@novac.com to confirm the payment."
+#: inc/class-novac-payment-gateway.php:962
+msgid "Attention: New order has been placed on hold because we could not get a definite response from the payment gateway. Kindly contact the Novac support team at support@novacpayment.com to confirm the payment."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:644
-#: inc/class-novac-payment-gateway.php:909
+#: inc/class-novac-payment-gateway.php:963
+#: inc/class-novac-payment-gateway.php:1177
 msgid "Payment Reference: "
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:663
-#: inc/class-novac-payment-gateway.php:921
+#: inc/class-novac-payment-gateway.php:982
 msgid "Attention: New order has been placed on hold because of incorrect payment amount or currency. Please, look into it."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:664
-#: inc/class-novac-payment-gateway.php:922
+#: inc/class-novac-payment-gateway.php:983
+#: inc/class-novac-payment-gateway.php:1201
 msgid "Amount paid: "
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:664
-#: inc/class-novac-payment-gateway.php:922
+#: inc/class-novac-payment-gateway.php:983
+#: inc/class-novac-payment-gateway.php:1202
 msgid "Order amount: "
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:664
-#: inc/class-novac-payment-gateway.php:922
+#: inc/class-novac-payment-gateway.php:983
 msgid " Reference: "
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:847
-msgid "verifying the Payment on Novac..."
+#: inc/class-novac-payment-gateway.php:1176
+msgid "Attention: Order placed on hold — no valid response from Novac after 3 attempts. Contact support@novacpayment.com."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:868
-msgid "Reason: Unknown"
+#: inc/class-novac-payment-gateway.php:1200
+msgid "Attention: Order on hold — amount or currency mismatch. Please review."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:886
-msgid "Payment Reversed. A new payment is required"
+#: inc/class-novac-payment-gateway.php:1209
+msgid "Payment verified and successful on Novac."
 msgstr ""
 
-#: inc/class-novac-payment-gateway.php:888
-msgid "Payment Reversed "
+#: inc/class-novac-payment-gateway.php:1210
+msgid "Novac reference: "
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:1217
+msgid "Payment still pending on Novac. Order placed on hold pending confirmation."
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:1222
+msgid "Transaction cancelled by the customer on Novac."
+msgstr ""
+
+#. translators: %s: novac status
+#: inc/class-novac-payment-gateway.php:1231
+#, php-format
+msgid "Payment %s on Novac. Order marked as failed."
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:1239
+msgid "Payment reversed on Novac. Order placed on hold — a new payment is required."
+msgstr ""
+
+#. translators: %s: novac status
+#: inc/class-novac-payment-gateway.php:1247
+#, php-format
+msgid "Unrecognised Novac status \"%s\". Order placed on hold for manual review."
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:1290
+msgid "Check Novac Transaction Status"
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:1308
+msgid "Novac: No transaction reference found for this order. Cannot query status."
+msgstr ""
+
+#. translators: %s: error message
+#: inc/class-novac-payment-gateway.php:1328
+#, php-format
+msgid "Novac: Transaction status check failed — %s"
+msgstr ""
+
+#. translators: %s: HTTP status code
+#: inc/class-novac-payment-gateway.php:1343
+#, php-format
+msgid "Novac: Transaction status check returned an unexpected response (HTTP %s). Please check the Novac dashboard."
+msgstr ""
+
+#. translators: 1: status 2: currency 3: amount 4: reference
+#: inc/class-novac-payment-gateway.php:1356
+#, php-format
+msgid "Novac manual requery — Status: %1$s | Amount: %2$s %3$s | Reference: %4$s"
+msgstr ""
+
+#: inc/class-novac-payment-gateway.php:1432
+msgid "Buy now with Novac"
 msgstr ""
 
 #. translators: $1. Minimum WooCommerce version. $2. Current WooCommerce version.
@@ -304,21 +443,91 @@ msgstr ""
 msgid "Novac requires WooCommerce %1$s or greater to be installed and activated. kindly upgrade to a higher version of WooCommerce. WooCommerce version %2$s is not supported."
 msgstr ""
 
-#: inc/rest-api/class-novac-settings-rest-controller.php:76
-msgid "The go_live value provided is invalid. Please provide a yes or no."
+#. translators: %s: setting name.
+#: inc/rest-api/class-novac-settings-rest-controller.php:110
+#, php-format
+msgid "The %s value provided is invalid. Please provide a yes or no."
 msgstr ""
 
-#: inc/rest-api/class-novac-settings-rest-controller.php:88
-msgid "The autocomplete_order value provided is invalid. Please provide a yes or no."
-msgstr ""
-
-#: inc/rest-api/class-novac-settings-rest-controller.php:100
-msgid "The enabled value provided is invalid. Please provide a yes or no."
-msgstr ""
-
-#: inc/rest-api/class-novac-settings-rest-controller.php:121
-#: inc/rest-api/class-novac-settings-rest-controller.php:139
+#: inc/rest-api/class-novac-settings-rest-controller.php:161
+#: inc/rest-api/class-novac-settings-rest-controller.php:179
 msgid "Your user is not permitted to access this resource."
+msgstr ""
+
+#: inc/rest-api/class-novac-settings-rest-controller.php:236
+msgid "Updated Successfully"
+msgstr ""
+
+#: inc/rest-api/class-novac-settings-rest-controller.php:296
+msgid "Novac is switched off, so it will not appear at checkout."
+msgstr ""
+
+#: inc/rest-api/class-novac-settings-rest-controller.php:307
+msgid "Novac is ready and will appear at checkout."
+msgstr ""
+
+#. translators: 1: live/test mode. 2: comma-separated list of key names.
+#: inc/rest-api/class-novac-settings-rest-controller.php:319
+#, php-format
+msgid "Novac is switched on but will not appear at checkout: you are in %1$s mode and these are missing: %2$s."
+msgstr ""
+
+#. translators: %s: live or test.
+#: inc/rest-api/class-novac-settings-rest-controller.php:341
+#, php-format
+msgid "Saved. Nothing was verified because the store is in %s mode and no secret key is set for that mode yet."
+msgstr ""
+
+#: inc/rest-api/class-novac-settings-rest-controller.php:342
+msgid "live"
+msgstr ""
+
+#: inc/rest-api/class-novac-settings-rest-controller.php:342
+msgid "test"
+msgstr ""
+
+#. translators: %s: name of the key field, e.g. "Live Secret Key".
+#. translators: %s: field name.
+#: inc/util/class-novac-validator.php:120
+#: assets/admin/settings/index.js:420
+#, php-format,js-format
+msgid "%s is required."
+msgstr ""
+
+#. translators: 1: name of the key field. 2: expected prefix, e.g. "nc_livesk_".
+#: inc/util/class-novac-validator.php:134
+#, php-format
+msgid "%1$s does not look right — it should start with \"%2$s\". Copy the key again from your Novac merchant dashboard."
+msgstr ""
+
+#. translators: %s: name of the key field.
+#: inc/util/class-novac-validator.php:147
+#, php-format
+msgid "%s looks incomplete. Copy the whole key from your Novac merchant dashboard."
+msgstr ""
+
+#: inc/util/class-novac-validator.php:264
+msgid "No secret key to verify."
+msgstr ""
+
+#. translators: %s: transport error message.
+#: inc/util/class-novac-validator.php:287
+#, php-format
+msgid "Could not reach Novac to verify the key (%s). The key was saved but has not been checked."
+msgstr ""
+
+#: inc/util/class-novac-validator.php:298
+msgid "Novac rejected this secret key. Check that you copied the right key for the selected mode."
+msgstr ""
+
+#. translators: %s: HTTP status code.
+#: inc/util/class-novac-validator.php:307
+#, php-format
+msgid "Novac returned a server error (HTTP %s) during verification. The key was saved but has not been checked."
+msgstr ""
+
+#: inc/util/class-novac-validator.php:315
+msgid "Novac accepted this secret key."
 msgstr ""
 
 #. Translators: %s Plugin name.
@@ -342,6 +551,160 @@ msgstr ""
 
 #: assets/admin/components/error-boundary/index.jsx:34
 msgid "There was an error rendering this view. Please contact support for assistance if the problem persists."
+msgstr ""
+
+#: assets/admin/settings/index.js:84
+msgid "Manage your Novac payment gateway settings below."
+msgstr ""
+
+#: assets/admin/settings/index.js:108
+msgid "Inactive"
+msgstr ""
+
+#: assets/admin/settings/index.js:113
+msgid "Not at checkout"
+msgstr ""
+
+#: assets/admin/settings/index.js:117
+msgid "Active"
+msgstr ""
+
+#: assets/admin/settings/index.js:136
+msgid "Status"
+msgstr ""
+
+#: assets/admin/settings/index.js:146
+msgid "Live Mode"
+msgstr ""
+
+#: assets/admin/settings/index.js:146
+msgid "Test Mode"
+msgstr ""
+
+#: assets/admin/settings/index.js:170
+msgid "Add them under \"API/Webhook Settings\"."
+msgstr ""
+
+#: assets/admin/settings/index.js:171
+msgid "Add them under \"Test Mode\" below, or switch to Live mode if you are using live keys."
+msgstr ""
+
+#. translators: %s: live or test.
+#: assets/admin/settings/index.js:195
+#, js-format
+msgid "Novac is switched on but is not appearing at checkout, because you are in %s mode and these are missing:"
+msgstr ""
+
+#: assets/admin/settings/index.js:196
+msgid "Live"
+msgstr ""
+
+#: assets/admin/settings/index.js:196
+msgid "Test"
+msgstr ""
+
+#: assets/admin/settings/index.js:229
+msgid "Webhook URL"
+msgstr ""
+
+#: assets/admin/settings/index.js:262
+msgid "✓ Copied!"
+msgstr ""
+
+#: assets/admin/settings/index.js:262
+msgid "Copy"
+msgstr ""
+
+#: assets/admin/settings/index.js:267
+msgid "Paste this URL in the Webhook section of your "
+msgstr ""
+
+#: assets/admin/settings/index.js:274
+msgid "Novac Merchant Dashboard"
+msgstr ""
+
+#: assets/admin/settings/index.js:300
+msgid "Saving…"
+msgstr ""
+
+#. translators: 1: field name. 2: expected prefix.
+#: assets/admin/settings/index.js:427
+#, js-format
+msgid "%1$s should start with \"%2$s\"."
+msgstr ""
+
+#. translators: %s: field name.
+#: assets/admin/settings/index.js:436
+#, js-format
+msgid "%s looks incomplete — copy the whole key."
+msgstr ""
+
+#: assets/admin/settings/index.js:594
+msgid "Nothing was saved. Please correct the highlighted fields."
+msgstr ""
+
+#: assets/admin/settings/index.js:601
+msgid "Novac could not save your settings. Please try again."
+msgstr ""
+
+#: assets/admin/settings/index.js:623
+msgid "Settings saved. Novac verified your credentials."
+msgstr ""
+
+#: assets/admin/settings/index.js:628
+msgid "Settings saved."
+msgstr ""
+
+#: assets/admin/settings/index.js:662
+msgid "Enable Novac Payments"
+msgstr ""
+
+#: assets/admin/settings/index.js:664
+msgid "Allow customers to pay with Novac at checkout. Uses your live keys."
+msgstr ""
+
+#: assets/admin/settings/index.js:665
+msgid "Allow customers to pay with Novac at checkout. You are in test mode, so the test keys under \"Test Mode\" are the ones used."
+msgstr ""
+
+#: assets/admin/settings/index.js:676
+msgid "Starts with nc_livesk_"
+msgstr ""
+
+#: assets/admin/settings/index.js:684
+msgid "Starts with nc_livepk_"
+msgstr ""
+
+#: assets/admin/settings/index.js:704
+msgid "Configure how Novac behaves on the checkout page."
+msgstr ""
+
+#: assets/admin/settings/index.js:709
+msgid "Autocomplete order after confirmed payment"
+msgstr ""
+
+#: assets/admin/settings/index.js:710
+msgid "Automatically move the order to Completed once payment is verified."
+msgstr ""
+
+#: assets/admin/settings/index.js:719
+msgid "Enable \"Buy Now\" button on product pages"
+msgstr ""
+
+#: assets/admin/settings/index.js:720
+msgid "Adds a \"Buy Now\" button next to \"Add to Cart\" that skips the cart and goes straight to checkout."
+msgstr ""
+
+#: assets/admin/settings/index.js:736
+msgid "Payment style on checkout"
+msgstr ""
+
+#: assets/admin/settings/index.js:772
+msgid "Starts with nc_testsk_"
+msgstr ""
+
+#: assets/admin/settings/index.js:780
+msgid "Starts with nc_testpk_"
 msgstr ""
 
 #: assets/admin/settings/strings.jsx:12
