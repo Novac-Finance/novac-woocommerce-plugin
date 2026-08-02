@@ -111,7 +111,16 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
      * @return void
      */
     public function __construct() {
-        $this->base_url           = 'https://api.novacpayment.com/api/v1/';
+        /**
+         * Filters the Novac API base URL.
+         *
+         * Lets a staging or test environment point the gateway at a stand-in
+         * without patching the plugin. Must keep the trailing slash.
+         *
+         * @param string $base_url The API base URL, with trailing slash.
+         * @since 1.0.2
+         */
+        $this->base_url           = trailingslashit( apply_filters( 'novac_woo_api_base_url', 'https://api.novacpayment.com/api/v1/' ) );
         $this->id                 = 'novac';
         $this->icon               = plugins_url( 'assets/img/logo.png', NOVAC_WOO_PLUGIN_FILE );
         $this->has_fields         = false;

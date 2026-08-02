@@ -6,7 +6,9 @@
 * Fixed: Checkout errors now distinguish a store misconfiguration from a transaction failure, and the underlying cause is written to the WooCommerce log.
 * Fixed: The admin notice warning merchants about missing API keys was built but never displayed.
 * Fixed: Payment initiation treated any non-WP_Error response as success, ignoring the HTTP status and reading the redirect URL off an undecoded response.
+* Fixed: `Novac_Request::$notify_url` was created as a dynamic property, which PHP 8.2 deprecates and PHP 9 will treat as a fatal error.
 * Added: `novac_woo_minimum_amounts` filter for per-currency minimum chargeable amounts.
+* Added: `novac_woo_api_base_url` filter for the Novac API base URL.
 
 = 1.0.1 =
 * Fixed: Webhook Transaction Verification Handler.

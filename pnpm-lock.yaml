@@ -33,6 +33,9 @@ importers:
       '@formatjs/icu-messageformat-parser':
         specifier: ^2.11.4
         version: 2.11.4
+      '@playwright/test':
+        specifier: ^1.62.1
+        version: 1.62.1
       '@svgr/cli':
         specifier: ^8.1.0
         version: 8.1.0(typescript@7.0.2)

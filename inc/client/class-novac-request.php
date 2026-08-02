@@ -23,6 +23,16 @@ defined( 'ABSPATH' ) || exit;
  */
 class Novac_Request {
     /**
+     * Callback URL handed to Novac for the customer's return journey.
+     *
+     * Declared rather than created on the fly: PHP 8.2 deprecates dynamic
+     * properties, and they become a fatal error in PHP 9.
+     *
+     * @var string
+     */
+    private string $notify_url;
+
+    /**
      *  Pointer to gateway making the request.
      */
     public function __construct() {
