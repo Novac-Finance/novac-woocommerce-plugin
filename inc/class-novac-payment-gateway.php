@@ -1264,7 +1264,9 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
             );
         }
 
-        if ( function_exists( 'as_enqueue_async_action' ) ) {
+        $queue_stalled = function_exists( 'novac_woo_webhook_queue_is_stalled' ) && novac_woo_webhook_queue_is_stalled();
+
+        if ( function_exists( 'as_enqueue_async_action' ) && ! $queue_stalled ) {
             as_enqueue_async_action(
                 'novac_process_webhook',
                 array( $txn_ref, $order_id, $status, $claim_key ),
@@ -1280,8 +1282,26 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
             );
         }
 
-        // Action Scheduler unavailable — fall back to inline processing rather than dropping the event.
-        $this->logger->error( 'Novac: Action Scheduler unavailable, processing ' . $txn_ref . ' inline.' );
+        /*
+         * Either Action Scheduler is missing, or its queue has demonstrably
+         * stopped draining. Process inline instead. That is slow enough that
+         * Novac's sender may time out and retry — which the claim above makes
+         * safe — but a store whose scheduler is broken must not answer 200 to
+         * a payment it then silently never processes.
+         */
+        $this->logger->error(
+            $queue_stalled
+                ? 'Novac: webhook queue is not draining, processing ' . $txn_ref . ' inline.'
+                : 'Novac: Action Scheduler unavailable, processing ' . $txn_ref . ' inline.'
+        );
+
+        // Finish the work even if the sender hangs up mid-verification.
+        ignore_user_abort( true );
+
+        if ( function_exists( 'wc_set_time_limit' ) ) {
+            wc_set_time_limit( 60 );
+        }
+
         $this->process_webhook_event( $txn_ref, $order_id, $status, $claim_key );
 
         wp_send_json(

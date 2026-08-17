@@ -260,6 +260,73 @@ test.describe( 'Webhook handler', () => {
 		expect( ( await api.order( order.id ) ).status ).toBe( 'on-hold' );
 	} );
 
+	test( 'recovers a stranded job when the merchant opens wp-admin', async ( {
+		page,
+		request,
+	} ) => {
+		const api = harness( request );
+		await api.setScenario( { verify_txn_state: 'successful' } );
+
+		const order = await createPendingOrder( page, request );
+
+		await sendWebhook( request, {
+			notify: 'transaction',
+			notifyType: 'payment',
+			data: { transactionReference: order.reference, status: 'successful' },
+		} );
+
+		// Never drained — this is the store whose cron or loopback is blocked,
+		// so Action Scheduler queued the job and nothing ever ran it.
+		await api.ageQueuedWebhooks( 600 );
+		expect( ( await api.order( order.id ) ).status ).toBe( 'pending' );
+
+		await page.goto( '/wp-admin/' );
+
+		const detail = await api.order( order.id );
+		expect( [ 'processing', 'completed' ] ).toContain( detail.status );
+
+		// Self-healing must not hide the misconfiguration that caused it.
+		await expect(
+			page.locator( '.notice-warning', {
+				hasText: 'not being processed on time',
+			} )
+		).toBeVisible();
+	} );
+
+	test( 'processes inline while the queue is known to be stalled', async ( {
+		page,
+		request,
+	} ) => {
+		const api = harness( request );
+		await api.setScenario( { verify_txn_state: 'successful' } );
+
+		// Strand one job to establish that the queue is not draining.
+		const stranded = await createPendingOrder( page, request );
+		await sendWebhook( request, {
+			notify: 'transaction',
+			notifyType: 'payment',
+			data: { transactionReference: stranded.reference, status: 'successful' },
+		} );
+		await api.ageQueuedWebhooks( 600 );
+
+		// The next delivery must not join a queue that demonstrably never runs.
+		const order = await createPendingOrder( page, request );
+		const response = await sendWebhook( request, {
+			notify: 'transaction',
+			notifyType: 'payment',
+			data: { transactionReference: order.reference, status: 'successful' },
+		} );
+
+		expect( response.status() ).toBe( 200 );
+		expect( await response.json() ).toMatchObject( {
+			message: 'Order Processed Successfully',
+		} );
+
+		// Handled during the webhook request itself, with nothing draining a queue.
+		const detail = await api.order( order.id );
+		expect( [ 'processing', 'completed' ] ).toContain( detail.status );
+	} );
+
 	test( 'gives up rather than looping on an unusable verify response', async ( {
 		page,
 		request,

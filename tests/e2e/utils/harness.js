@@ -56,6 +56,15 @@ function harness( request ) {
 		runQueuedWebhooks: () => call( 'post', '/run-actions' ),
 
 		/**
+		 * Backdate the queued webhook jobs so the plugin sees a stalled queue.
+		 *
+		 * @param {number} seconds How far back to move them.
+		 * @return {Promise<{aged: number}>} How many jobs moved.
+		 */
+		ageQueuedWebhooks: ( seconds = 600 ) =>
+			call( 'post', '/age-actions', { seconds } ),
+
+		/**
 		 * Script what the mocked Novac API returns.
 		 *
 		 * @param {Object} scenario Partial scenario; unset keys fall back to defaults.

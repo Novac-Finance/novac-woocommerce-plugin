@@ -114,6 +114,20 @@ const detail = await api.order( order.id );
 Only that hook is drained. The claim-expiry jobs are scheduled a day out, and
 running them early would defeat the idempotency they exist to provide.
 
+To reach the *stalled queue* branches — the safety net for stores where cron or
+loopback is blocked and nothing ever runs the queue — backdate the jobs instead
+of draining them:
+
+```js
+await sendWebhook( request, payload );
+await api.ageQueuedWebhooks( 600 );   // now overdue past the stall threshold
+
+await page.goto( '/wp-admin/' );      // admin_init sweep runs it in-process
+```
+
+`ageQueuedWebhooks()` also clears the plugin's cached stall verdict, so the very
+next request sees the state it just created rather than a minute-old answer.
+
 ## Store fixtures
 
 `setup-store.sh` creates:
