@@ -105,6 +105,7 @@ final class Novac_E2E_Harness {
                 'verify_amount'    => null,   // Null means "echo the order total".
                 'verify_currency'  => null,   // Null means "echo the order currency".
                 'verify_error'     => '',
+                'verify_raw_body'  => null,   // Non-null returns HTTP 200 carrying this exact body.
                 // Response to the credential-probe verify call made on settings save.
                 'probe_status'     => 200,
             ),
@@ -210,6 +211,14 @@ final class Novac_E2E_Harness {
                 (int) $scenario['verify_status'],
                 array( 'message' => 'Simulated verification failure.' )
             );
+        }
+
+        // A 200 carrying a body the plugin cannot use: empty, truncated, or an
+        // HTML error page substituted by a proxy. Worth scripting on its own,
+        // because this is the response the retry loop used to spin on forever
+        // without ever counting an attempt.
+        if ( null !== $scenario['verify_raw_body'] ) {
+            return self::response( 200, (string) $scenario['verify_raw_body'] );
         }
 
         $order    = self::order_from_reference( $reference );
@@ -441,8 +450,25 @@ final class Novac_E2E_Harness {
                 'callback'            => static function () {
                     delete_option( self::SCENARIO_OPTION );
                     delete_option( self::REQUESTS_OPTION );
+                    self::clear_webhook_claims();
 
                     return new WP_REST_Response( array( 'reset' => true ), 200 );
+                },
+            )
+        );
+
+        // The webhook handler acknowledges immediately and queues the real work
+        // on Action Scheduler. In production the queue is drained by a loopback
+        // request; waiting on that in a test would be slow and flaky, so a spec
+        // drains it explicitly and then asserts on the order.
+        register_rest_route(
+            'novac-e2e/v1',
+            '/run-actions',
+            array(
+                'methods'             => 'POST',
+                'permission_callback' => $auth,
+                'callback'            => static function () {
+                    return new WP_REST_Response( array( 'ran' => self::run_pending_webhook_actions() ), 200 );
                 },
             )
         );
@@ -570,6 +596,57 @@ final class Novac_E2E_Harness {
                 },
             )
         );
+    }
+
+    /**
+     * Run every queued webhook job synchronously.
+     *
+     * Only the webhook hook is drained: the claim-expiry jobs are scheduled a
+     * day out and running them early would defeat the idempotency they exist
+     * to provide.
+     *
+     * @return int Number of actions run.
+     */
+    private static function run_pending_webhook_actions(): int {
+        if ( ! class_exists( 'ActionScheduler' ) || ! class_exists( 'ActionScheduler_Store' ) ) {
+            return 0;
+        }
+
+        $store  = ActionScheduler::store();
+        $runner = ActionScheduler::runner();
+
+        $action_ids = $store->query_actions(
+            array(
+                'hook'     => 'novac_process_webhook',
+                'status'   => ActionScheduler_Store::STATUS_PENDING,
+                'per_page' => 50,
+                'orderby'  => 'date',
+                'order'    => 'ASC',
+            )
+        );
+
+        foreach ( $action_ids as $action_id ) {
+            $runner->process_action( (int) $action_id, 'Novac E2E' );
+        }
+
+        return count( $action_ids );
+    }
+
+    /**
+     * Drop the idempotency claims left behind by earlier webhook deliveries.
+     *
+     * @return void
+     */
+    private static function clear_webhook_claims(): void {
+        global $wpdb;
+
+        $names = $wpdb->get_col(
+            "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE 'novac\\_wh\\_%'"
+        );
+
+        foreach ( (array) $names as $name ) {
+            delete_option( $name );
+        }
     }
 
     /**

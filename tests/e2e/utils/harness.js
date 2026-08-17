@@ -42,8 +42,18 @@ function harness( request ) {
 	};
 
 	return {
-		/** Clear the scenario and the recorded request log. */
+		/** Clear the scenario, the recorded request log and any webhook claims. */
 		reset: () => call( 'post', '/reset' ),
+
+		/**
+		 * Drain the queued webhook jobs.
+		 *
+		 * The handler acknowledges and queues; this runs what it queued, so a
+		 * spec can assert on the resulting order without racing the scheduler.
+		 *
+		 * @return {Promise<{ran: number}>} How many jobs ran.
+		 */
+		runQueuedWebhooks: () => call( 'post', '/run-actions' ),
 
 		/**
 		 * Script what the mocked Novac API returns.

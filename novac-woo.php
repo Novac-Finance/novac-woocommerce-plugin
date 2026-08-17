@@ -65,6 +65,46 @@ function novac_woo_bootstrap() {
 add_action( 'plugins_loaded', 'novac_woo_bootstrap', 99 );
 
 /**
+ * Run a queued webhook event.
+ *
+ * Registered here rather than in the gateway constructor: Action Scheduler runs
+ * jobs in a separate request where WooCommerce is loaded but the payment
+ * gateways are not necessarily instantiated, so a callback added from the
+ * constructor would never fire. Asking WC for its gateways instantiates them.
+ *
+ * @param string $txn_ref   Transaction reference.
+ * @param int    $order_id  WooCommerce order id.
+ * @param string $status    Status carried by the webhook.
+ * @param string $claim_key Idempotency key.
+ * @return void
+ */
+function novac_woo_run_queued_webhook( $txn_ref, $order_id, $status = '', $claim_key = '' ) {
+    if ( ! function_exists( 'WC' ) ) {
+        return;
+    }
+
+    $gateways = WC()->payment_gateways()->payment_gateways();
+
+    if ( isset( $gateways['novac'] ) && method_exists( $gateways['novac'], 'process_webhook_event' ) ) {
+        $gateways['novac']->process_webhook_event( (string) $txn_ref, (int) $order_id, (string) $status, (string) $claim_key );
+    }
+}
+
+add_action( 'novac_process_webhook', 'novac_woo_run_queued_webhook', 10, 4 );
+
+/**
+ * Expire a webhook idempotency claim.
+ *
+ * @param string $claim_key Idempotency key.
+ * @return void
+ */
+function novac_woo_release_webhook_claim( $claim_key ) {
+    delete_option( (string) $claim_key );
+}
+
+add_action( 'novac_release_webhook_claim', 'novac_woo_release_webhook_claim', 10, 1 );
+
+/**
  * Register the admin JS.
  */
 function novac_woo_add_extension_register_script() {

@@ -1050,15 +1050,122 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
     }
 
     /**
+     * Verify a transaction against the Novac API.
+     *
+     * Bounded: increments the attempt counter on every pass, and treats an
+     * HTTP 200 carrying an unusable body as a failed attempt rather than a
+     * reason to loop again.
+     *
+     * @param string $txn_ref      The Novac transaction reference.
+     * @param int    $max_attempts Number of attempts before giving up.
+     * @return object|null The decoded API response, or null when verification failed.
+     */
+    protected function verify_transaction( string $txn_ref, int $max_attempts = 3 ): ?object {
+        $args = array(
+            'method'  => 'GET',
+            'timeout' => 10,
+            'headers' => array(
+                'Content-Type'  => 'application/json',
+                'Authorization' => 'Bearer ' . $this->get_secret_key(),
+            ),
+        );
+
+        for ( $attempt = 1; $attempt <= $max_attempts; $attempt++ ) {
+            $response = wp_safe_remote_request( $this->base_url . 'checkout/' . $txn_ref . '/verify', $args );
+
+            if ( is_wp_error( $response ) ) {
+                $this->logger->error( 'Novac: verify transport error for ' . $txn_ref . ' (attempt ' . $attempt . '): ' . $response->get_error_message() );
+            } else {
+                $code = (int) wp_remote_retrieve_response_code( $response );
+                $body = wp_remote_retrieve_body( $response );
+
+                if ( 200 === $code ) {
+                    $decoded = json_decode( $body );
+
+                    if ( $decoded instanceof \stdClass && isset( $decoded->data ) ) {
+                        return $decoded;
+                    }
+
+                    // A 200 with an unusable body is a failed attempt, not a retry-forever condition.
+                    $this->logger->error( 'Novac: verify returned 200 with an unusable body for ' . $txn_ref . ' (attempt ' . $attempt . '): ' . substr( (string) $body, 0, 500 ) );
+                } else {
+                    $this->logger->error( 'Novac: verify returned HTTP ' . $code . ' for ' . $txn_ref . ' (attempt ' . $attempt . ').' );
+                }
+            }
+
+            if ( $attempt < $max_attempts ) {
+                sleep( 2 );
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Build the idempotency key for a webhook event.
+     *
+     * Keyed on reference *and* notify type *and* status, not the reference
+     * alone — otherwise a later `reversed` event on a transaction that already
+     * succeeded would be silently swallowed as a duplicate.
+     *
+     * @param string $txn_ref     Transaction reference.
+     * @param string $notify_type The notifyType field.
+     * @param string $status      The transaction status carried by the webhook.
+     * @return string
+     */
+    protected function get_webhook_claim_key( string $txn_ref, string $notify_type, string $status ): string {
+        return 'novac_wh_' . md5( $txn_ref . '|' . $notify_type . '|' . $status );
+    }
+
+    /**
+     * Claim a webhook event for processing.
+     *
+     * add_option() is backed by a unique index on option_name, so a duplicate
+     * insert loses the race rather than both winning.
+     *
+     * @param string $claim_key The idempotency key.
+     * @return bool True when this request won the claim, false when already claimed.
+     */
+    protected function claim_webhook_event( string $claim_key ): bool {
+        // Autoload 'no' — these are write-once and never read on a normal page load.
+        $claimed = add_option( $claim_key, time(), '', 'no' );
+
+        if ( $claimed && function_exists( 'as_schedule_single_action' ) ) {
+            as_schedule_single_action( time() + DAY_IN_SECONDS, 'novac_release_webhook_claim', array( $claim_key ), 'novac' );
+        }
+
+        return $claimed;
+    }
+
+    /**
+     * Drop a claim so a later delivery of the same event can be retried.
+     *
+     * @param string $claim_key The idempotency key.
+     * @return void
+     */
+    public function release_webhook_claim( string $claim_key ): void {
+        delete_option( $claim_key );
+    }
+
+    /**
      * Process Webhook notifications.
+     *
+     * Validates and acknowledges in-request; verification and order mutation
+     * are handed to Action Scheduler so the response is never held open on
+     * an outbound API call or on WooCommerce's synchronous email dispatch.
      */
     public function novac_notification_handler() {
-        $secret_key = $this->secret_key;
-
-//        $merchant_secret_hash = hash_hmac( 'SHA512', $public_key, $secret_key );
+        /*
+         * TODO: the allowlist below is the only thing authenticating this
+         * endpoint, and novac_get_client_ip() reads X-Forwarded-For, which the
+         * caller controls unless a trusted proxy strips it. Ask Novac whether
+         * they send a signature header; if they do, verify it here —
+         * hash_hmac( 'SHA512', $raw, $this->get_secret_key() ) — and demote the
+         * IP check to a second line of defence.
+         */
 
         if ( NOVAC_WOO_ALLOWED_WEBHOOK_IP_ADDRESS !== $this->novac_get_client_ip() ) {
-            $this->logger->info( 'Faudulent Webhook Notification Attempt [Access Restricted]: ' . (string) $this->novac_get_client_ip() );
+            $this->logger->info( 'Fraudulent Webhook Notification Attempt [Access Restricted]: ' . (string) $this->novac_get_client_ip() );
             wp_send_json(
                 array(
                     'status'  => 'error',
@@ -1068,15 +1175,11 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
             );
         }
 
-        // https://github.com/woocommerce/woocommerce/blob/22af34971b26c7852057cb4f5585204bbe010e44/plugins/woocommerce/src/Enums/OrderStatus.php#L14
+        $raw   = file_get_contents( 'php://input' );
+        $event = json_decode( $raw );
 
-        $event = file_get_contents( 'php://input' );
-
-        http_response_code( 200 );
-        $event = json_decode( $event );
-
-        if ( empty( $event->notify ) && empty( $event->data ) ) {
-            $this->logger->info( 'Webhook: ' . wp_json_encode( $event ) );
+        if ( ! $event instanceof \stdClass || empty( $event->notify ) || empty( $event->data ) ) {
+            $this->logger->info( 'Novac: malformed webhook: ' . substr( (string) $raw, 0, 1000 ) );
             wp_send_json(
                 array(
                     'status'  => 'error',
@@ -1098,185 +1201,212 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
 
         $this->logger->info( 'Webhook: ' . wp_json_encode( $event ) );
 
-        if ( 'transaction' === $event->notify || 'banktransfer' === $event->notify ) {
-            sleep( 2 );
-            // phpcs:ignore
-            $event_type = $event->notifyType;
-            $event_data = $event->data;
-
-            // check if transaction reference starts with WOO on hpos enabled.
-            if ( empty( $event_data->transactionReference ) || substr( (string) $event_data->transactionReference, 0, 4 ) !== 'WOO_' ) {
-                wp_send_json(
-                    array(
-                        'status'  => 'failed',
-                        'message' => 'The transaction reference ' . ( $event_data->transactionReference ?? '' ) . ' is not a Novac WooCommerce Generated transaction',
-                    ),
-                    WP_Http::BAD_REQUEST
-                );
-            }
-
-            $txn_ref  = sanitize_text_field( $event_data->transactionReference );
-            $o        = explode( '_', $txn_ref );
-            $order_id = intval( $o[1] );
-            $order    = wc_get_order( $order_id );
-
-            // get order status.
-            if ( ! $order ) {
-                wp_send_json(
-                    array(
-                        'status'  => 'failed',
-                        'message' => 'This transaction does not exist.',
-                    ),
-                    WP_Http::BAD_REQUEST
-                );
-            }
-
-            $current_order_status = $order->get_status();
-
-            /**
-             * Fires after the webhook has been processed.
-             *
-             * @param string $event The webhook event.
-             * @since 1.0.0
-             */
-            do_action( 'novac_webhook_after_action', wp_json_encode( $event, true ) );
-            $statuses_in_question = array( 'pending', 'on-hold', 'cancelled');
-            if ( 'failed' === $current_order_status ) {
-                // NOTE: customer must have tried to make payment again in the same session.
-                $statuses_in_question[] = 'failed';
-            }
-
-            if ( ! in_array( $current_order_status, $statuses_in_question, true ) && 'reversed' !== $event_data->status ) {
-                wp_send_json(
-                    array(
-                        'status'  => 'error',
-                        'message' => 'Order already processed',
-                    ),
-                    WP_Http::CREATED
-                );
-            }
-
-            // Verify transaction against Novac API (up to 3 attempts).
-            $max_attempts = 3;
-            $attempt      = 0;
-            $api_response = null;
-
-            $verify_args = array(
-                'method'  => 'GET',
-                'headers' => array(
-                    'Content-Type'  => 'application/json',
-                    'Authorization' => 'Bearer ' . $secret_key,
+        if ( 'transaction' !== $event->notify && 'banktransfer' !== $event->notify ) {
+            wp_send_json(
+                array(
+                    'status'  => 'failed',
+                    'message' => 'Unable to process this webhook notification',
                 ),
+                WP_Http::OK
             );
+        }
 
-            while ( $attempt < $max_attempts && null === $api_response ) {
-                $response = wp_safe_remote_request( $this->base_url . 'checkout/' . $txn_ref . '/verify', $verify_args );
+        $event_data = $event->data;
+        // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+        $txn_ref = isset( $event_data->transactionReference ) ? sanitize_text_field( (string) $event_data->transactionReference ) : '';
 
-                if ( ! is_wp_error( $response ) && 200 === wp_remote_retrieve_response_code( $response ) ) {
-                    $api_response = json_decode( wp_remote_retrieve_body( $response ) );
-                } else {
-                    ++$attempt;
-                    usleep( 2000000 );
-                }
-            }
+        // check if transaction reference starts with WOO on hpos enabled.
+        if ( '' === $txn_ref || 'WOO_' !== substr( $txn_ref, 0, 4 ) ) {
+            wp_send_json(
+                array(
+                    'status'  => 'failed',
+                    'message' => 'The transaction reference ' . $txn_ref . ' is not a Novac WooCommerce Generated transaction',
+                ),
+                WP_Http::BAD_REQUEST
+            );
+        }
 
-            if ( null === $api_response || empty( $api_response->data ) ) {
-                $order->update_status( 'on-hold' );
-                $admin_note  = esc_html__( 'Attention: Order placed on hold — no valid response from Novac after 3 attempts. Contact support@novacpayment.com.', 'novac-woo' ) . '<br>';
-                $admin_note .= esc_html__( 'Payment Reference: ', 'novac-woo' ) . $txn_ref;
-                $order->add_order_note( $admin_note );
-                $this->logger->error( 'Failed to verify transaction ' . $txn_ref . ' after ' . $max_attempts . ' attempts.' );
+        $parts    = explode( '_', $txn_ref );
+        $order_id = isset( $parts[1] ) ? intval( $parts[1] ) : 0;
+        $order    = $order_id > 0 ? wc_get_order( $order_id ) : false;
 
-                wp_send_json(
-                    array(
-                        'status'  => 'error',
-                        'message' => 'Could not verify transaction with Novac.',
-                    ),
-                    WP_Http::OK
-                );
-            }
+        if ( ! $order instanceof WC_Order ) {
+            wp_send_json(
+                array(
+                    'status'  => 'failed',
+                    'message' => 'This transaction does not exist.',
+                ),
+                WP_Http::BAD_REQUEST
+            );
+        }
 
-            $novac_status = (string) ( $api_response->data->status ?? 'unknown' );
-            $this->logger->info( 'Webhook verify response for ' . $txn_ref . ': ' . wp_json_encode( $api_response->data ) );
+        /**
+         * Fires after the webhook has been received and validated.
+         *
+         * @param string $event The webhook event, JSON encoded.
+         * @since 1.0.0
+         */
+        do_action( 'novac_webhook_after_action', wp_json_encode( $event ) );
 
-            switch ( $novac_status ) {
-                case 'successful':
-                    $amount   = (float) ( $api_response->data->amount ?? 0 );
-                    $currency = (string) ( $api_response->data->currency ?? '' );
+        // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+        $notify_type = isset( $event->notifyType ) ? (string) $event->notifyType : '';
+        $status      = isset( $event_data->status ) ? (string) $event_data->status : '';
+        $claim_key   = $this->get_webhook_claim_key( $txn_ref, $notify_type, $status );
 
-                    if ( $currency !== $order->get_currency() || ! $this->amounts_equal( $amount, $order->get_total() ) ) {
-                        $order->update_status( 'on-hold' );
-                        $admin_note  = esc_html__( 'Attention: Order on hold — amount or currency mismatch. Please review.', 'novac-woo' ) . '<br>';
-                        $admin_note .= esc_html__( 'Amount paid: ', 'novac-woo' ) . $currency . ' ' . $amount . '<br>';
-                        $admin_note .= esc_html__( 'Order amount: ', 'novac-woo' ) . $order->get_currency() . ' ' . $order->get_total();
-                        $order->add_order_note( $admin_note );
-                    } else {
-                        $order->payment_complete();
-                        if ( 'yes' === $this->auto_complete_order ) {
-                            $order->update_status( 'completed' );
-                        }
-                        $order->add_order_note( esc_html__( 'Payment verified and successful on Novac.', 'novac-woo' ) );
-                        $order->add_order_note( esc_html__( 'Novac reference: ', 'novac-woo' ) . $txn_ref );
-                        $order->add_order_note( 'Thank you for your order.<br>Your payment was successful, we are now <strong>processing</strong> your order.', 1 );
-                    }
-                    break;
+        if ( ! $this->claim_webhook_event( $claim_key ) ) {
+            $this->logger->info( 'Novac: duplicate webhook delivery ignored for ' . $txn_ref . ' (' . $notify_type . '/' . $status . ').' );
+            wp_send_json(
+                array(
+                    'status'  => 'success',
+                    'message' => 'Already received',
+                ),
+                WP_Http::OK
+            );
+        }
 
-                case 'pending':
-                    $order->update_status( 'on-hold' );
-                    $order->add_order_note( esc_html__( 'Payment still pending on Novac. Order placed on hold pending confirmation.', 'novac-woo' ) );
-                    break;
-
-                case 'cancelled':
-                    $order->update_status( 'cancelled' );
-                    $order->add_order_note( esc_html__( 'Transaction cancelled by the customer on Novac.', 'novac-woo' ) );
-                    break;
-
-                case 'abandoned':
-                case 'failed':
-                    $order->update_status( 'failed' );
-                    $order->add_order_note(
-                        sprintf(
-                            /* translators: %s: novac status */
-                            esc_html__( 'Payment %s on Novac. Order marked as failed.', 'novac-woo' ),
-                            $novac_status
-                        )
-                    );
-                    break;
-
-                case 'reversed':
-                    $order->update_status( 'on-hold' );
-                    $order->add_order_note( esc_html__( 'Payment reversed on Novac. Order placed on hold — a new payment is required.', 'novac-woo' ) );
-                    break;
-
-                default:
-                    $order->update_status( 'on-hold' );
-                    $order->add_order_note(
-                        sprintf(
-                            /* translators: %s: novac status */
-                            esc_html__( 'Unrecognised Novac status "%s". Order placed on hold for manual review.', 'novac-woo' ),
-                            $novac_status
-                        )
-                    );
-                    break;
-            }
+        if ( function_exists( 'as_enqueue_async_action' ) ) {
+            as_enqueue_async_action(
+                'novac_process_webhook',
+                array( $txn_ref, $order_id, $status, $claim_key ),
+                'novac'
+            );
 
             wp_send_json(
                 array(
                     'status'  => 'success',
-                    'message' => 'Order Processed Successfully',
+                    'message' => 'Webhook accepted',
                 ),
-                WP_Http::CREATED
+                WP_Http::OK
             );
         }
 
+        // Action Scheduler unavailable — fall back to inline processing rather than dropping the event.
+        $this->logger->error( 'Novac: Action Scheduler unavailable, processing ' . $txn_ref . ' inline.' );
+        $this->process_webhook_event( $txn_ref, $order_id, $status, $claim_key );
+
         wp_send_json(
             array(
-                'status'  => 'failed',
-                'message' => 'Unable to process this webhook notification',
+                'status'  => 'success',
+                'message' => 'Order Processed Successfully',
             ),
-            WP_Http::CREATED
+            WP_Http::OK
         );
-        exit();
+    }
+
+    /**
+     * Verify a transaction and apply the result to its order.
+     *
+     * Runs out of band via Action Scheduler. Safe to take seconds — nothing is
+     * waiting on it.
+     *
+     * @param string $txn_ref   Transaction reference.
+     * @param int    $order_id  WooCommerce order id.
+     * @param string $status    Status carried by the webhook (informational).
+     * @param string $claim_key Idempotency key, released when processing could not complete.
+     * @return void
+     */
+    public function process_webhook_event( string $txn_ref, int $order_id, string $status = '', string $claim_key = '' ): void {
+        $order = wc_get_order( $order_id );
+
+        if ( ! $order instanceof WC_Order ) {
+            $this->logger->error( 'Novac: order ' . $order_id . ' vanished before webhook processing for ' . $txn_ref . '.' );
+            return;
+        }
+
+        // Re-check status here, not only at receipt — the order may have moved on
+        // between acknowledgement and this job running.
+        $current_order_status = $order->get_status();
+        $statuses_in_question = array( 'pending', 'on-hold', 'cancelled', 'failed' );
+
+        if ( ! in_array( $current_order_status, $statuses_in_question, true ) && 'reversed' !== $status ) {
+            $this->logger->info( 'Novac: order ' . $order_id . ' already in status "' . $current_order_status . '", skipping webhook ' . $txn_ref . '.' );
+            return;
+        }
+
+        $api_response = $this->verify_transaction( $txn_ref );
+
+        if ( null === $api_response ) {
+            $order->update_status( 'on-hold' );
+            $admin_note  = esc_html__( 'Attention: Order placed on hold — no valid response from Novac after 3 attempts. Contact support@novacpayment.com.', 'novac-woo' ) . '<br>';
+            $admin_note .= esc_html__( 'Payment Reference: ', 'novac-woo' ) . $txn_ref;
+            $order->add_order_note( $admin_note );
+            $this->logger->error( 'Novac: failed to verify transaction ' . $txn_ref . ' after 3 attempts.' );
+
+            // Let a subsequent delivery of the same event try again.
+            if ( '' !== $claim_key ) {
+                $this->release_webhook_claim( $claim_key );
+            }
+
+            return;
+        }
+
+        $novac_status = (string) ( $api_response->data->status ?? 'unknown' );
+        $this->logger->info( 'Webhook verify response for ' . $txn_ref . ': ' . wp_json_encode( $api_response->data ) );
+
+        // WooCommerce's own status list, for the mapping below:
+        // https://github.com/woocommerce/woocommerce/blob/22af34971b26c7852057cb4f5585204bbe010e44/plugins/woocommerce/src/Enums/OrderStatus.php#L14
+        switch ( $novac_status ) {
+            case 'successful':
+                $amount   = (float) ( $api_response->data->amount ?? 0 );
+                $currency = (string) ( $api_response->data->currency ?? '' );
+
+                if ( $currency !== $order->get_currency() || ! $this->amounts_equal( $amount, $order->get_total() ) ) {
+                    $order->update_status( 'on-hold' );
+                    $admin_note  = esc_html__( 'Attention: Order on hold — amount or currency mismatch. Please review.', 'novac-woo' ) . '<br>';
+                    $admin_note .= esc_html__( 'Amount paid: ', 'novac-woo' ) . $currency . ' ' . $amount . '<br>';
+                    $admin_note .= esc_html__( 'Order amount: ', 'novac-woo' ) . $order->get_currency() . ' ' . $order->get_total();
+                    $order->add_order_note( $admin_note );
+                } else {
+                    $order->payment_complete( $txn_ref );
+
+                    if ( 'yes' === $this->auto_complete_order ) {
+                        $order->update_status( 'completed' );
+                    }
+
+                    $order->add_order_note( esc_html__( 'Payment verified and successful on Novac.', 'novac-woo' ) );
+                    $order->add_order_note( esc_html__( 'Novac reference: ', 'novac-woo' ) . $txn_ref );
+                    $order->add_order_note( 'Thank you for your order.<br>Your payment was successful, we are now <strong>processing</strong> your order.', 1 );
+                }
+                break;
+
+            case 'pending':
+                $order->update_status( 'on-hold' );
+                $order->add_order_note( esc_html__( 'Payment still pending on Novac. Order placed on hold pending confirmation.', 'novac-woo' ) );
+                break;
+
+            case 'cancelled':
+                $order->update_status( 'cancelled' );
+                $order->add_order_note( esc_html__( 'Transaction cancelled by the customer on Novac.', 'novac-woo' ) );
+                break;
+
+            case 'abandoned':
+            case 'failed':
+                $order->update_status( 'failed' );
+                $order->add_order_note(
+                    sprintf(
+                        /* translators: %s: novac status */
+                        esc_html__( 'Payment %s on Novac. Order marked as failed.', 'novac-woo' ),
+                        $novac_status
+                    )
+                );
+                break;
+
+            case 'reversed':
+                $order->update_status( 'on-hold' );
+                $order->add_order_note( esc_html__( 'Payment reversed on Novac. Order placed on hold — a new payment is required.', 'novac-woo' ) );
+                break;
+
+            default:
+                $order->update_status( 'on-hold' );
+                $order->add_order_note(
+                    sprintf(
+                        /* translators: %s: novac status */
+                        esc_html__( 'Unrecognised Novac status "%s". Order placed on hold for manual review.', 'novac-woo' ),
+                        $novac_status
+                    )
+                );
+                break;
+        }
     }
 
     /**

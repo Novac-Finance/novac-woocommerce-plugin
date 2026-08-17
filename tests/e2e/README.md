@@ -92,10 +92,27 @@ test( 'surfaces the rejection reason', async ( { page, request } ) => {
 | `verify_amount` | `null` | `null` echoes the order total; set a value to force a mismatch |
 | `verify_currency` | `null` | `null` echoes the order currency |
 | `verify_error` | `''` | Non-empty returns a `WP_Error` |
+| `verify_raw_body` | `null` | Non-null returns HTTP 200 carrying that exact body — use `''` for the unusable-body case |
 | `probe_status` | `200` | Status for the credential probe made on settings save |
 
 `configureWorkingGateway()` puts the store into an enabled, test-mode,
 fully-keyed state — the starting point for most specs.
+
+### Queued webhook work
+
+The webhook handler acknowledges the delivery and queues verification on
+Action Scheduler, so the order is untouched when the response comes back. A
+spec that wants to assert on order state drains the queue first:
+
+```js
+await sendWebhook( request, payload );
+await api.runQueuedWebhooks();     // runs the queued novac_process_webhook jobs
+
+const detail = await api.order( order.id );
+```
+
+Only that hook is drained. The claim-expiry jobs are scheduled a day out, and
+running them early would defeat the idempotency they exist to provide.
 
 ## Store fixtures
 
