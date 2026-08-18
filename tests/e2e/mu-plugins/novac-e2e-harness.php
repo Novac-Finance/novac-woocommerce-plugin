@@ -52,6 +52,7 @@ final class Novac_E2E_Harness {
     public static function init(): void {
         add_filter( 'novac_woo_api_base_url', array( __CLASS__, 'mock_base_url' ) );
         add_filter( 'pre_http_request', array( __CLASS__, 'intercept' ), 10, 3 );
+        add_filter( 'novac_woo_trusted_proxies', array( __CLASS__, 'trusted_proxies' ) );
         add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
         add_action( 'init', array( __CLASS__, 'maybe_render_hosted_page' ) );
     }
@@ -69,6 +70,35 @@ final class Novac_E2E_Harness {
      */
     public static function mock_base_url(): string {
         return home_url( '/novac-e2e-api/v1/' );
+    }
+
+    /**
+     * Stand in for the reverse proxy a real store sits behind.
+     *
+     * The suite drives the webhook endpoint over HTTP from outside the
+     * container, so the request always arrives from the Docker network rather
+     * than from Novac. Declaring that network as a trusted proxy makes the
+     * plugin believe the X-Forwarded-For the specs send — exactly as a store
+     * behind Cloudflare or a load balancer would.
+     *
+     * Setting `trust_proxy` false removes it, which is how a spec reaches the
+     * case that matters: a spoofed forwarded header on a store with no proxy
+     * in front of it must not get past the allowlist.
+     *
+     * @param array $proxies Existing trusted proxies.
+     * @return array
+     */
+    public static function trusted_proxies( array $proxies ): array {
+        $scenario = self::scenario();
+
+        if ( empty( $scenario['trust_proxy'] ) ) {
+            return $proxies;
+        }
+
+        return array_merge(
+            $proxies,
+            array( '127.0.0.1', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16' )
+        );
     }
 
     /**
@@ -108,6 +138,8 @@ final class Novac_E2E_Harness {
                 'verify_raw_body'  => null,   // Non-null returns HTTP 200 carrying this exact body.
                 // Response to the credential-probe verify call made on settings save.
                 'probe_status'     => 200,
+                // Whether the store is treated as sitting behind a reverse proxy.
+                'trust_proxy'      => true,
             ),
             is_array( $stored ) ? $stored : array()
         );
@@ -469,6 +501,56 @@ final class Novac_E2E_Harness {
                 'permission_callback' => $auth,
                 'callback'            => static function () {
                     return new WP_REST_Response( array( 'ran' => self::run_pending_webhook_actions() ), 200 );
+                },
+            )
+        );
+
+        /*
+         * Resolve a caller address from synthetic request state.
+         *
+         * This one is deliberately not driven over real HTTP. The WordPress
+         * Docker image enables Apache's mod_remoteip with the private ranges as
+         * internal proxies, so it rewrites REMOTE_ADDR from X-Forwarded-For
+         * before PHP ever runs — meaning a real request cannot exercise the
+         * plugin's own trust decision. Feeding the values in directly tests the
+         * logic that actually protects a store whose web server is not doing
+         * that for it.
+         */
+        register_rest_route(
+            'novac-e2e/v1',
+            '/resolve-ip',
+            array(
+                'methods'             => 'POST',
+                'permission_callback' => $auth,
+                'callback'            => static function ( WP_REST_Request $request ) {
+                    $params  = (array) $request->get_json_params();
+                    $trusted = isset( $params['trusted'] ) ? (array) $params['trusted'] : array();
+
+                    $override = static function () use ( $trusted ) {
+                        return $trusted;
+                    };
+
+                    $original = $_SERVER;
+
+                    $_SERVER['REMOTE_ADDR'] = (string) ( $params['remote_addr'] ?? '' );
+
+                    if ( isset( $params['forwarded'] ) ) {
+                        $_SERVER['HTTP_X_FORWARDED_FOR'] = (string) $params['forwarded'];
+                    } else {
+                        unset( $_SERVER['HTTP_X_FORWARDED_FOR'] );
+                    }
+
+                    // Priority 99 so this wins over the harness's own stand-in proxy.
+                    add_filter( 'novac_woo_trusted_proxies', $override, 99 );
+
+                    $gateways = WC()->payment_gateways()->payment_gateways();
+                    $resolved = isset( $gateways['novac'] ) ? $gateways['novac']->novac_get_client_ip() : 'NO_GATEWAY';
+
+                    remove_filter( 'novac_woo_trusted_proxies', $override, 99 );
+
+                    $_SERVER = $original;
+
+                    return new WP_REST_Response( array( 'ip' => $resolved ), 200 );
                 },
             )
         );

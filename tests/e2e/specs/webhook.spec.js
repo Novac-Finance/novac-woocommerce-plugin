@@ -2,9 +2,15 @@
  * Webhook handler.
  *
  * Driven over HTTP rather than through the browser. The handler restricts
- * callers by IP, so requests carry an X-Forwarded-For matching the address the
- * plugin allows — which is itself worth asserting, since a webhook that anyone
- * can call would let a stranger mark orders paid.
+ * callers by address, which is worth asserting on its own: a webhook anyone can
+ * call would let a stranger mark orders paid.
+ *
+ * The specs send an X-Forwarded-For naming the allowed address, and the harness
+ * declares the Docker network as a trusted proxy so the plugin believes it —
+ * emulating a store behind Cloudflare or a load balancer. Note that Apache's
+ * mod_remoteip is also rewriting REMOTE_ADDR from that header in this image, so
+ * the trust decision the plugin itself makes is covered by the resolveIp()
+ * cases below rather than by these HTTP requests.
  */
 
 const { test, expect } = require( '@playwright/test' );
@@ -75,6 +81,102 @@ test.describe( 'Webhook handler', () => {
 		);
 
 		expect( response.status() ).toBe( 401 );
+	} );
+
+	test( 'refuses a caller with no forwarded header at all', async ( { request } ) => {
+		const response = await request.post( WEBHOOK_PATH, {
+			headers: { 'Content-Type': 'application/json' },
+			data: { notify: 'test_assess', data: {} },
+		} );
+
+		expect( response.status() ).toBe( 401 );
+	} );
+
+	// These go through the harness rather than real HTTP on purpose. The
+	// WordPress Docker image runs Apache's mod_remoteip with the private ranges
+	// listed as internal proxies, so it overwrites REMOTE_ADDR from
+	// X-Forwarded-For before PHP is reached — a real request from the test
+	// runner can never exercise the plugin's own trust decision. The cases below
+	// are what protects a store whose web server is not configured to do that.
+	test( 'ignores a forwarded header when no proxy is declared', async ( { request } ) => {
+		const api = harness( request );
+
+		const { ip } = await api.resolveIp( {
+			remote_addr: '203.0.113.9',
+			forwarded: ALLOWED_IP,
+			trusted: [],
+		} );
+
+		// The caller named Novac's address in a header they set themselves.
+		// Only the socket address means anything here.
+		expect( ip ).toBe( '203.0.113.9' );
+	} );
+
+	test( 'believes a forwarded header from a declared proxy', async ( { request } ) => {
+		const api = harness( request );
+
+		const { ip } = await api.resolveIp( {
+			remote_addr: '10.0.0.5',
+			forwarded: ALLOWED_IP,
+			trusted: [ '10.0.0.0/8' ],
+		} );
+
+		expect( ip ).toBe( ALLOWED_IP );
+	} );
+
+	test( 'takes the last untrusted hop, so prepended entries cannot lie', async ( {
+		request,
+	} ) => {
+		const api = harness( request );
+
+		// An attacker sends "X-Forwarded-For: <novac ip>"; the real proxy appends
+		// their own address. Reading left to right would believe the attacker.
+		const { ip } = await api.resolveIp( {
+			remote_addr: '10.0.0.5',
+			forwarded: `${ ALLOWED_IP }, 203.0.113.9`,
+			trusted: [ '10.0.0.0/8' ],
+		} );
+
+		expect( ip ).toBe( '203.0.113.9' );
+	} );
+
+	test( 'walks back through chained proxies to the real client', async ( { request } ) => {
+		const api = harness( request );
+
+		const { ip } = await api.resolveIp( {
+			remote_addr: '10.0.0.5',
+			forwarded: `${ ALLOWED_IP }, 10.0.0.7`,
+			trusted: [ '10.0.0.0/8' ],
+		} );
+
+		expect( ip ).toBe( ALLOWED_IP );
+	} );
+
+	test( 'falls back to the socket address on a malformed chain', async ( { request } ) => {
+		const api = harness( request );
+
+		const { ip } = await api.resolveIp( {
+			remote_addr: '10.0.0.5',
+			forwarded: 'not-an-ip',
+			trusted: [ '10.0.0.0/8' ],
+		} );
+
+		expect( ip ).toBe( '10.0.0.5' );
+	} );
+
+	test( 'does not match an IPv4 caller against an IPv6 proxy range', async ( {
+		request,
+	} ) => {
+		const api = harness( request );
+
+		const { ip } = await api.resolveIp( {
+			remote_addr: '10.0.0.5',
+			forwarded: ALLOWED_IP,
+			trusted: [ '2001:db8::/32' ],
+		} );
+
+		// The proxy does not match, so the header stays unbelieved.
+		expect( ip ).toBe( '10.0.0.5' );
 	} );
 
 	test( 'rejects a reference that did not come from this plugin', async ( { request } ) => {

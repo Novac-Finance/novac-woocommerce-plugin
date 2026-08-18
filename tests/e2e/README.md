@@ -94,6 +94,7 @@ test( 'surfaces the rejection reason', async ( { page, request } ) => {
 | `verify_error` | `''` | Non-empty returns a `WP_Error` |
 | `verify_raw_body` | `null` | Non-null returns HTTP 200 carrying that exact body — use `''` for the unusable-body case |
 | `probe_status` | `200` | Status for the credential probe made on settings save |
+| `trust_proxy` | `true` | Declares the Docker network a trusted reverse proxy, so the plugin believes the specs' `X-Forwarded-For` |
 
 `configureWorkingGateway()` puts the store into an enabled, test-mode,
 fully-keyed state — the starting point for most specs.
@@ -127,6 +128,30 @@ await page.goto( '/wp-admin/' );      // admin_init sweep runs it in-process
 
 `ageQueuedWebhooks()` also clears the plugin's cached stall verdict, so the very
 next request sees the state it just created rather than a minute-old answer.
+
+### Caller addresses and mod_remoteip
+
+The plugin only believes `X-Forwarded-For` when the request arrives from a proxy
+the store declared via the `novac_woo_trusted_proxies` filter; otherwise it uses
+`REMOTE_ADDR`. The harness declares the Docker network so the HTTP specs behave
+like a proxied store.
+
+That trust decision cannot be tested over real HTTP here. The `wordpress` image
+enables Apache's `mod_remoteip` with the private ranges as internal proxies:
+
+```
+RemoteIPHeader X-Forwarded-For
+RemoteIPInternalProxy 172.16.0.0/12
+```
+
+so Apache overwrites `REMOTE_ADDR` from the header before PHP runs, and a
+request from the test runner always looks like it came from wherever the header
+says. `api.resolveIp( { remote_addr, forwarded, trusted } )` feeds the values
+straight to the plugin instead, which is how the spoofing cases are covered.
+
+Worth knowing operationally too: on any host whose web server trusts forwarded
+headers this broadly, `REMOTE_ADDR` is itself attacker-influenced, and no
+PHP-level check can recover from that.
 
 ## Store fixtures
 

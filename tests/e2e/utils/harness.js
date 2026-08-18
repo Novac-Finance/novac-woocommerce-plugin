@@ -65,6 +65,21 @@ function harness( request ) {
 			call( 'post', '/age-actions', { seconds } ),
 
 		/**
+		 * Ask the plugin which address it resolves from given request state.
+		 *
+		 * Bypasses real HTTP on purpose: Apache's mod_remoteip rewrites
+		 * REMOTE_ADDR from X-Forwarded-For in this image, so a real request
+		 * cannot reach the plugin's own trust decision.
+		 *
+		 * @param {Object} state             Request state.
+		 * @param {string} state.remote_addr Socket address.
+		 * @param {string} [state.forwarded] X-Forwarded-For value.
+		 * @param {Array}  [state.trusted]   Trusted proxy IPs or CIDRs.
+		 * @return {Promise<{ip: string}>} The resolved address.
+		 */
+		resolveIp: ( state ) => call( 'post', '/resolve-ip', state ),
+
+		/**
 		 * Script what the mocked Novac API returns.
 		 *
 		 * @param {Object} scenario Partial scenario; unset keys fall back to defaults.

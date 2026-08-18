@@ -1019,34 +1019,145 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
     }
 
     /**
-     * Get the Ip of the current request.
+     * Reverse proxies whose forwarded headers may be believed.
+     *
+     * Empty by default, and that default is the safe one: X-Forwarded-For and
+     * friends are set by whoever makes the request, so they mean nothing unless
+     * something in front of WordPress overwrites them. A store behind
+     * Cloudflare, a load balancer or any other proxy must declare it here —
+     * otherwise the webhook allowlist compares Novac's address against the
+     * proxy's and rejects every delivery.
+     *
+     * Accepts single addresses or CIDR ranges, IPv4 and IPv6.
+     *
+     * @return array
+     */
+    protected function get_trusted_proxies(): array {
+        /**
+         * Filters the reverse proxies this store sits behind.
+         *
+         * @param array $proxies IPs or CIDR ranges.
+         * @since 1.0.3
+         */
+        return (array) apply_filters( 'novac_woo_trusted_proxies', array() );
+    }
+
+    /**
+     * Get the IP of the current request.
+     *
+     * REMOTE_ADDR is the only value a caller cannot choose, so it is the
+     * default answer. Forwarded headers are consulted only when REMOTE_ADDR is
+     * a proxy the store has explicitly declared — and even then the chain is
+     * walked from the right, skipping known proxies, because an attacker can
+     * prepend entries to X-Forwarded-For but cannot append past their own hop.
      *
      * @return string
      */
     public function novac_get_client_ip() {
-        $ip_keys = array(
-            'HTTP_CLIENT_IP',
-            'HTTP_X_FORWARDED_FOR',
-            'HTTP_X_FORWARDED',
-            'HTTP_X_CLUSTER_CLIENT_IP',
-            'HTTP_FORWARDED_FOR',
-            'HTTP_FORWARDED',
-            'REMOTE_ADDR',
-        );
+        $remote_addr = isset( $_SERVER['REMOTE_ADDR'] )
+            ? trim( sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) )
+            : '';
 
-        foreach ( $ip_keys as $key ) {
-            if ( ! empty( $_SERVER[ $key ] ) ) {
-                $ip_list = explode( ',', sanitize_text_field( wp_unslash( $_SERVER[ $key ] ) ) );
-                foreach ( $ip_list as $ip ) {
-                    $ip = trim( $ip );
-                    if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
-                        return $ip;
-                    }
-                }
+        if ( ! filter_var( $remote_addr, FILTER_VALIDATE_IP ) ) {
+            return 'UNKNOWN';
+        }
+
+        $trusted = $this->get_trusted_proxies();
+
+        if ( empty( $trusted ) || ! $this->ip_matches_any( $remote_addr, $trusted ) ) {
+            return $remote_addr;
+        }
+
+        $forwarded = isset( $_SERVER['HTTP_X_FORWARDED_FOR'] )
+            ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_FORWARDED_FOR'] ) )
+            : '';
+
+        if ( '' === $forwarded ) {
+            return $remote_addr;
+        }
+
+        foreach ( array_reverse( array_map( 'trim', explode( ',', $forwarded ) ) ) as $hop ) {
+            if ( ! filter_var( $hop, FILTER_VALIDATE_IP ) ) {
+                // A malformed hop means the chain is no longer trustworthy.
+                break;
+            }
+
+            if ( ! $this->ip_matches_any( $hop, $trusted ) ) {
+                return $hop;
             }
         }
 
-        return 'UNKNOWN';
+        return $remote_addr;
+    }
+
+    /**
+     * Whether an address matches any of the given addresses or CIDR ranges.
+     *
+     * @param string $ip         Address to test.
+     * @param array  $candidates Addresses or CIDR ranges.
+     * @return bool
+     */
+    protected function ip_matches_any( string $ip, array $candidates ): bool {
+        foreach ( $candidates as $candidate ) {
+            if ( $this->ip_matches( $ip, (string) $candidate ) ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether an address falls inside a single address or CIDR range.
+     *
+     * Compares packed binary form, so IPv4 and IPv6 are handled the same way
+     * and mixed-family comparisons simply fail rather than matching loosely.
+     *
+     * @param string $ip    Address to test.
+     * @param string $range Address or CIDR range.
+     * @return bool
+     */
+    protected function ip_matches( string $ip, string $range ): bool {
+        $range = trim( $range );
+
+        if ( '' === $range ) {
+            return false;
+        }
+
+        if ( false === strpos( $range, '/' ) ) {
+            return $ip === $range;
+        }
+
+        list( $subnet, $bits ) = explode( '/', $range, 2 );
+
+        $packed_ip     = inet_pton( $ip );
+        $packed_subnet = inet_pton( trim( $subnet ) );
+
+        if ( false === $packed_ip || false === $packed_subnet || strlen( $packed_ip ) !== strlen( $packed_subnet ) ) {
+            return false;
+        }
+
+        $bits    = (int) $bits;
+        $maximum = strlen( $packed_ip ) * 8;
+
+        if ( $bits < 0 || $bits > $maximum ) {
+            return false;
+        }
+
+        $whole_bytes = intdiv( $bits, 8 );
+        $spare_bits  = $bits % 8;
+
+        if ( $whole_bytes > 0 && substr( $packed_ip, 0, $whole_bytes ) !== substr( $packed_subnet, 0, $whole_bytes ) ) {
+            return false;
+        }
+
+        if ( 0 === $spare_bits ) {
+            return true;
+        }
+
+        $mask = chr( ( 0xFF << ( 8 - $spare_bits ) ) & 0xFF );
+
+        return ( $packed_ip[ $whole_bytes ] & $mask ) === ( $packed_subnet[ $whole_bytes ] & $mask );
     }
 
     /**
@@ -1156,16 +1267,27 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
      */
     public function novac_notification_handler() {
         /*
-         * TODO: the allowlist below is the only thing authenticating this
-         * endpoint, and novac_get_client_ip() reads X-Forwarded-For, which the
-         * caller controls unless a trusted proxy strips it. Ask Novac whether
-         * they send a signature header; if they do, verify it here —
-         * hash_hmac( 'SHA512', $raw, $this->get_secret_key() ) — and demote the
-         * IP check to a second line of defence.
+         * TODO: this allowlist is the only thing authenticating an endpoint that
+         * mutates order state. Ask Novac whether they send a signature header;
+         * if they do, verify it here — hash_hmac( 'SHA512', $raw,
+         * $this->get_secret_key() ) — and keep the address check as the second
+         * line rather than the only one.
          */
 
-        if ( NOVAC_WOO_ALLOWED_WEBHOOK_IP_ADDRESS !== $this->novac_get_client_ip() ) {
-            $this->logger->info( 'Fraudulent Webhook Notification Attempt [Access Restricted]: ' . (string) $this->novac_get_client_ip() );
+        $client_ip = $this->novac_get_client_ip();
+
+        if ( NOVAC_WOO_ALLOWED_WEBHOOK_IP_ADDRESS !== $client_ip ) {
+            /*
+             * Log the raw inputs too. A store behind a proxy it has not declared
+             * via novac_woo_trusted_proxies sees its own proxy's address here,
+             * and without the forwarded chain that looks identical to an attack.
+             */
+            $this->logger->info(
+                'Novac: webhook rejected, address not allowed. Resolved: ' . $client_ip
+                . '; REMOTE_ADDR: ' . ( isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : 'none' )
+                . '; X-Forwarded-For: ' . ( isset( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) : 'none' )
+                . '; trusted proxies configured: ' . ( empty( $this->get_trusted_proxies() ) ? 'none' : 'yes' )
+            );
             wp_send_json(
                 array(
                     'status'  => 'error',

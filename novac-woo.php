@@ -104,6 +104,23 @@ function novac_woo_release_webhook_claim( $claim_key ) {
 
 add_action( 'novac_release_webhook_claim', 'novac_woo_release_webhook_claim', 10, 1 );
 
+/*
+ * If this store sits behind a reverse proxy — Cloudflare, a load balancer, an
+ * nginx front end — declare it, or the webhook allowlist compares Novac's
+ * address against the proxy's and rejects every delivery:
+ *
+ *     add_filter(
+ *         'novac_woo_trusted_proxies',
+ *         function ( $proxies ) {
+ *             $proxies[] = '198.51.100.0/24';
+ *             return $proxies;
+ *         }
+ *     );
+ *
+ * Declare only proxies that actually overwrite X-Forwarded-For. Naming a range
+ * you do not control lets anyone inside it forge the caller address.
+ */
+
 /**
  * How long a queued webhook job may sit past its scheduled time before the
  * queue is treated as stalled.
