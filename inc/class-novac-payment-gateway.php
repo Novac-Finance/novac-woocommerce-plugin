@@ -1234,34 +1234,38 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
      * add_option() is backed by a unique index on option_name, so a duplicate
      * insert loses the race rather than both winning.
      *
+     * A claim older than a day is taken over rather than honoured. The expiry
+     * job below is what normally clears it, and on a store where neither
+     * Action Scheduler nor WP-Cron runs that job never fires — without this,
+     * one stuck claim would block that event permanently.
+     *
      * @param string $claim_key The idempotency key.
-     * @return bool True when this request won the claim, false when already claimed.
+     * @return bool True when this request won the claim, false when a live claim already exists.
      */
-protected function claim_webhook_event( string $claim_key ): bool {
-    $now     = time();
-    // Autoload 'no' — these are write-once and never read on a normal page load.
-    $claimed = add_option( $claim_key, $now, '', 'no' );
+    protected function claim_webhook_event( string $claim_key ): bool {
+        $now     = time();
+        // Autoload 'no' — these are write-once and never read on a normal page load.
+        $claimed = add_option( $claim_key, $now, '', 'no' );
 
-    if ( ! $claimed ) {
-        $existing = (int) get_option( $claim_key, 0 );
+        if ( ! $claimed ) {
+            $existing = (int) get_option( $claim_key, 0 );
 
-        // Allow reclaiming a stale claim when no scheduler is available to expire it.
-        if ( $existing > 0 && ( $now - $existing ) > DAY_IN_SECONDS ) {
-            delete_option( $claim_key );
-            $claimed = add_option( $claim_key, $now, '', 'no' );
+            // Allow reclaiming a stale claim when no scheduler is available to expire it.
+            if ( $existing > 0 && ( $now - $existing ) > DAY_IN_SECONDS ) {
+                delete_option( $claim_key );
+                $claimed = add_option( $claim_key, $now, '', 'no' );
+            }
         }
-    }
 
-    if ( $claimed ) {
-        if ( function_exists( 'as_schedule_single_action' ) ) {
-            as_schedule_single_action( $now + DAY_IN_SECONDS, 'novac_release_webhook_claim', array( $claim_key ), 'novac' );
-        } else {
-            wp_schedule_single_event( $now + DAY_IN_SECONDS, 'novac_release_webhook_claim', array( $claim_key ) );
+        if ( $claimed ) {
+            if ( function_exists( 'as_schedule_single_action' ) ) {
+                as_schedule_single_action( $now + DAY_IN_SECONDS, 'novac_release_webhook_claim', array( $claim_key ), 'novac' );
+            } else {
+                wp_schedule_single_event( $now + DAY_IN_SECONDS, 'novac_release_webhook_claim', array( $claim_key ) );
+            }
         }
-    }
 
-    return (bool) $claimed;
-}
+        return (bool) $claimed;
     }
 
     /**

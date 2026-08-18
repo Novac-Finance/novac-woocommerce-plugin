@@ -713,26 +713,36 @@ final class Novac_E2E_Harness {
         $store  = ActionScheduler::store();
         $runner = ActionScheduler::runner();
 
-$ran = 0;
+        $ran    = 0;
+        $passes = 0;
 
-do {
-    $action_ids = $store->query_actions(
-        array(
-            'hook'     => 'novac_process_webhook',
-            'status'   => ActionScheduler_Store::STATUS_PENDING,
-            'per_page' => 50,
-            'orderby'  => 'date',
-            'order'    => 'ASC',
-        )
-    );
+        /*
+         * Re-query between passes, because running a job can queue another one.
+         * Bounded on purpose: process_action() leaves an action pending if it
+         * cannot transition it, and an unbounded loop over "still pending" would
+         * then spin until CI times out — the exact failure this suite exists to
+         * catch in the gateway.
+         */
+        do {
+            $action_ids = $store->query_actions(
+                array(
+                    'hook'     => 'novac_process_webhook',
+                    'status'   => ActionScheduler_Store::STATUS_PENDING,
+                    'per_page' => 50,
+                    'orderby'  => 'date',
+                    'order'    => 'ASC',
+                )
+            );
 
-    foreach ( (array) $action_ids as $action_id ) {
-        $runner->process_action( (int) $action_id, 'Novac E2E' );
-        ++$ran;
-    }
-} while ( ! empty( $action_ids ) );
+            foreach ( (array) $action_ids as $action_id ) {
+                $runner->process_action( (int) $action_id, 'Novac E2E' );
+                ++$ran;
+            }
 
-return $ran;
+            ++$passes;
+        } while ( ! empty( $action_ids ) && $passes < 5 );
+
+        return $ran;
     }
 
     /**
