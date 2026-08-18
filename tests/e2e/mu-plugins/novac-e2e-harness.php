@@ -631,21 +631,26 @@ final class Novac_E2E_Harness {
         $store  = ActionScheduler::store();
         $runner = ActionScheduler::runner();
 
-        $action_ids = $store->query_actions(
-            array(
-                'hook'     => 'novac_process_webhook',
-                'status'   => ActionScheduler_Store::STATUS_PENDING,
-                'per_page' => 50,
-                'orderby'  => 'date',
-                'order'    => 'ASC',
-            )
-        );
+$ran = 0;
 
-        foreach ( $action_ids as $action_id ) {
-            $runner->process_action( (int) $action_id, 'Novac E2E' );
-        }
+do {
+    $action_ids = $store->query_actions(
+        array(
+            'hook'     => 'novac_process_webhook',
+            'status'   => ActionScheduler_Store::STATUS_PENDING,
+            'per_page' => 50,
+            'orderby'  => 'date',
+            'order'    => 'ASC',
+        )
+    );
 
-        return count( $action_ids );
+    foreach ( (array) $action_ids as $action_id ) {
+        $runner->process_action( (int) $action_id, 'Novac E2E' );
+        ++$ran;
+    }
+} while ( ! empty( $action_ids ) );
+
+return $ran;
     }
 
     /**
