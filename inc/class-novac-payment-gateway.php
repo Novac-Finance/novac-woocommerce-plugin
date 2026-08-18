@@ -1237,15 +1237,31 @@ class Novac_Payment_Gateway extends WC_Payment_Gateway {
      * @param string $claim_key The idempotency key.
      * @return bool True when this request won the claim, false when already claimed.
      */
-    protected function claim_webhook_event( string $claim_key ): bool {
-        // Autoload 'no' — these are write-once and never read on a normal page load.
-        $claimed = add_option( $claim_key, time(), '', 'no' );
+protected function claim_webhook_event( string $claim_key ): bool {
+    $now     = time();
+    // Autoload 'no' — these are write-once and never read on a normal page load.
+    $claimed = add_option( $claim_key, $now, '', 'no' );
 
-        if ( $claimed && function_exists( 'as_schedule_single_action' ) ) {
-            as_schedule_single_action( time() + DAY_IN_SECONDS, 'novac_release_webhook_claim', array( $claim_key ), 'novac' );
+    if ( ! $claimed ) {
+        $existing = (int) get_option( $claim_key, 0 );
+
+        // Allow reclaiming a stale claim when no scheduler is available to expire it.
+        if ( $existing > 0 && ( $now - $existing ) > DAY_IN_SECONDS ) {
+            delete_option( $claim_key );
+            $claimed = add_option( $claim_key, $now, '', 'no' );
         }
+    }
 
-        return $claimed;
+    if ( $claimed ) {
+        if ( function_exists( 'as_schedule_single_action' ) ) {
+            as_schedule_single_action( $now + DAY_IN_SECONDS, 'novac_release_webhook_claim', array( $claim_key ), 'novac' );
+        } else {
+            wp_schedule_single_event( $now + DAY_IN_SECONDS, 'novac_release_webhook_claim', array( $claim_key ) );
+        }
+    }
+
+    return (bool) $claimed;
+}
     }
 
     /**
