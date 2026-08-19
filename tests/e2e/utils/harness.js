@@ -42,8 +42,42 @@ function harness( request ) {
 	};
 
 	return {
-		/** Clear the scenario and the recorded request log. */
+		/** Clear the scenario, the recorded request log and any webhook claims. */
 		reset: () => call( 'post', '/reset' ),
+
+		/**
+		 * Drain the queued webhook jobs.
+		 *
+		 * The handler acknowledges and queues; this runs what it queued, so a
+		 * spec can assert on the resulting order without racing the scheduler.
+		 *
+		 * @return {Promise<{ran: number}>} How many jobs ran.
+		 */
+		runQueuedWebhooks: () => call( 'post', '/run-actions' ),
+
+		/**
+		 * Backdate the queued webhook jobs so the plugin sees a stalled queue.
+		 *
+		 * @param {number} seconds How far back to move them.
+		 * @return {Promise<{aged: number}>} How many jobs moved.
+		 */
+		ageQueuedWebhooks: ( seconds = 600 ) =>
+			call( 'post', '/age-actions', { seconds } ),
+
+		/**
+		 * Ask the plugin which address it resolves from given request state.
+		 *
+		 * Bypasses real HTTP on purpose: Apache's mod_remoteip rewrites
+		 * REMOTE_ADDR from X-Forwarded-For in this image, so a real request
+		 * cannot reach the plugin's own trust decision.
+		 *
+		 * @param {Object} state             Request state.
+		 * @param {string} state.remote_addr Socket address.
+		 * @param {string} [state.forwarded] X-Forwarded-For value.
+		 * @param {Array}  [state.trusted]   Trusted proxy IPs or CIDRs.
+		 * @return {Promise<{ip: string}>} The resolved address.
+		 */
+		resolveIp: ( state ) => call( 'post', '/resolve-ip', state ),
 
 		/**
 		 * Script what the mocked Novac API returns.

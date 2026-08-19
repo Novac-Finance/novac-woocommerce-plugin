@@ -52,6 +52,7 @@ final class Novac_E2E_Harness {
     public static function init(): void {
         add_filter( 'novac_woo_api_base_url', array( __CLASS__, 'mock_base_url' ) );
         add_filter( 'pre_http_request', array( __CLASS__, 'intercept' ), 10, 3 );
+        add_filter( 'novac_woo_trusted_proxies', array( __CLASS__, 'trusted_proxies' ) );
         add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
         add_action( 'init', array( __CLASS__, 'maybe_render_hosted_page' ) );
     }
@@ -69,6 +70,35 @@ final class Novac_E2E_Harness {
      */
     public static function mock_base_url(): string {
         return home_url( '/novac-e2e-api/v1/' );
+    }
+
+    /**
+     * Stand in for the reverse proxy a real store sits behind.
+     *
+     * The suite drives the webhook endpoint over HTTP from outside the
+     * container, so the request always arrives from the Docker network rather
+     * than from Novac. Declaring that network as a trusted proxy makes the
+     * plugin believe the X-Forwarded-For the specs send — exactly as a store
+     * behind Cloudflare or a load balancer would.
+     *
+     * Setting `trust_proxy` false removes it, which is how a spec reaches the
+     * case that matters: a spoofed forwarded header on a store with no proxy
+     * in front of it must not get past the allowlist.
+     *
+     * @param array $proxies Existing trusted proxies.
+     * @return array
+     */
+    public static function trusted_proxies( array $proxies ): array {
+        $scenario = self::scenario();
+
+        if ( empty( $scenario['trust_proxy'] ) ) {
+            return $proxies;
+        }
+
+        return array_merge(
+            $proxies,
+            array( '127.0.0.1', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16' )
+        );
     }
 
     /**
@@ -105,8 +135,11 @@ final class Novac_E2E_Harness {
                 'verify_amount'    => null,   // Null means "echo the order total".
                 'verify_currency'  => null,   // Null means "echo the order currency".
                 'verify_error'     => '',
+                'verify_raw_body'  => null,   // Non-null returns HTTP 200 carrying this exact body.
                 // Response to the credential-probe verify call made on settings save.
                 'probe_status'     => 200,
+                // Whether the store is treated as sitting behind a reverse proxy.
+                'trust_proxy'      => true,
             ),
             is_array( $stored ) ? $stored : array()
         );
@@ -210,6 +243,14 @@ final class Novac_E2E_Harness {
                 (int) $scenario['verify_status'],
                 array( 'message' => 'Simulated verification failure.' )
             );
+        }
+
+        // A 200 carrying a body the plugin cannot use: empty, truncated, or an
+        // HTML error page substituted by a proxy. Worth scripting on its own,
+        // because this is the response the retry loop used to spin on forever
+        // without ever counting an attempt.
+        if ( null !== $scenario['verify_raw_body'] ) {
+            return self::response( 200, (string) $scenario['verify_raw_body'] );
         }
 
         $order    = self::order_from_reference( $reference );
@@ -441,8 +482,91 @@ final class Novac_E2E_Harness {
                 'callback'            => static function () {
                     delete_option( self::SCENARIO_OPTION );
                     delete_option( self::REQUESTS_OPTION );
+                    self::clear_webhook_claims();
 
                     return new WP_REST_Response( array( 'reset' => true ), 200 );
+                },
+            )
+        );
+
+        // The webhook handler acknowledges immediately and queues the real work
+        // on Action Scheduler. In production the queue is drained by a loopback
+        // request; waiting on that in a test would be slow and flaky, so a spec
+        // drains it explicitly and then asserts on the order.
+        register_rest_route(
+            'novac-e2e/v1',
+            '/run-actions',
+            array(
+                'methods'             => 'POST',
+                'permission_callback' => $auth,
+                'callback'            => static function () {
+                    return new WP_REST_Response( array( 'ran' => self::run_pending_webhook_actions() ), 200 );
+                },
+            )
+        );
+
+        /*
+         * Resolve a caller address from synthetic request state.
+         *
+         * This one is deliberately not driven over real HTTP. The WordPress
+         * Docker image enables Apache's mod_remoteip with the private ranges as
+         * internal proxies, so it rewrites REMOTE_ADDR from X-Forwarded-For
+         * before PHP ever runs — meaning a real request cannot exercise the
+         * plugin's own trust decision. Feeding the values in directly tests the
+         * logic that actually protects a store whose web server is not doing
+         * that for it.
+         */
+        register_rest_route(
+            'novac-e2e/v1',
+            '/resolve-ip',
+            array(
+                'methods'             => 'POST',
+                'permission_callback' => $auth,
+                'callback'            => static function ( WP_REST_Request $request ) {
+                    $params  = (array) $request->get_json_params();
+                    $trusted = isset( $params['trusted'] ) ? (array) $params['trusted'] : array();
+
+                    $override = static function () use ( $trusted ) {
+                        return $trusted;
+                    };
+
+                    $original = $_SERVER;
+
+                    $_SERVER['REMOTE_ADDR'] = (string) ( $params['remote_addr'] ?? '' );
+
+                    if ( isset( $params['forwarded'] ) ) {
+                        $_SERVER['HTTP_X_FORWARDED_FOR'] = (string) $params['forwarded'];
+                    } else {
+                        unset( $_SERVER['HTTP_X_FORWARDED_FOR'] );
+                    }
+
+                    // Priority 99 so this wins over the harness's own stand-in proxy.
+                    add_filter( 'novac_woo_trusted_proxies', $override, 99 );
+
+                    $gateways = WC()->payment_gateways()->payment_gateways();
+                    $resolved = isset( $gateways['novac'] ) ? $gateways['novac']->novac_get_client_ip() : 'NO_GATEWAY';
+
+                    remove_filter( 'novac_woo_trusted_proxies', $override, 99 );
+
+                    $_SERVER = $original;
+
+                    return new WP_REST_Response( array( 'ip' => $resolved ), 200 );
+                },
+            )
+        );
+
+        // Backdate queued jobs so a spec can reach the stalled-queue branches
+        // without waiting out the real five-minute threshold.
+        register_rest_route(
+            'novac-e2e/v1',
+            '/age-actions',
+            array(
+                'methods'             => 'POST',
+                'permission_callback' => $auth,
+                'callback'            => static function ( WP_REST_Request $request ) {
+                    $seconds = (int) ( $request->get_json_params()['seconds'] ?? 600 );
+
+                    return new WP_REST_Response( array( 'aged' => self::age_webhook_actions( $seconds ) ), 200 );
                 },
             )
         );
@@ -570,6 +694,122 @@ final class Novac_E2E_Harness {
                 },
             )
         );
+    }
+
+    /**
+     * Run every queued webhook job synchronously.
+     *
+     * Only the webhook hook is drained: the claim-expiry jobs are scheduled a
+     * day out and running them early would defeat the idempotency they exist
+     * to provide.
+     *
+     * @return int Number of actions run.
+     */
+    private static function run_pending_webhook_actions(): int {
+        if ( ! class_exists( 'ActionScheduler' ) || ! class_exists( 'ActionScheduler_Store' ) ) {
+            return 0;
+        }
+
+        $store  = ActionScheduler::store();
+        $runner = ActionScheduler::runner();
+
+        $ran    = 0;
+        $passes = 0;
+
+        /*
+         * Re-query between passes, because running a job can queue another one.
+         * Bounded on purpose: process_action() leaves an action pending if it
+         * cannot transition it, and an unbounded loop over "still pending" would
+         * then spin until CI times out — the exact failure this suite exists to
+         * catch in the gateway.
+         */
+        do {
+            $action_ids = $store->query_actions(
+                array(
+                    'hook'     => 'novac_process_webhook',
+                    'status'   => ActionScheduler_Store::STATUS_PENDING,
+                    'per_page' => 50,
+                    'orderby'  => 'date',
+                    'order'    => 'ASC',
+                )
+            );
+
+            foreach ( (array) $action_ids as $action_id ) {
+                $runner->process_action( (int) $action_id, 'Novac E2E' );
+                ++$ran;
+            }
+
+            ++$passes;
+        } while ( ! empty( $action_ids ) && $passes < 5 );
+
+        return $ran;
+    }
+
+    /**
+     * Backdate the pending webhook jobs.
+     *
+     * The plugin only treats the queue as stalled once a job is overdue by
+     * NOVAC_WOO_QUEUE_STALL_SECONDS. Moving the scheduled date backwards gets a
+     * spec to that state immediately instead of sleeping through it.
+     *
+     * @param int $seconds How far back to move the scheduled dates.
+     * @return int Rows changed.
+     */
+    private static function age_webhook_actions( int $seconds ): int {
+        global $wpdb;
+
+        // The plugin caches its stall verdict for a minute; drop it so the very
+        // next request sees the state this call just created.
+        delete_transient( 'novac_webhook_queue_stalled' );
+        delete_transient( 'novac_webhook_sweep_lock' );
+
+        $table = $wpdb->prefix . 'actionscheduler_actions';
+
+        if ( $table !== $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ) ) {
+            return 0;
+        }
+
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        return (int) $wpdb->query(
+            $wpdb->prepare(
+                "UPDATE {$table}
+                    SET scheduled_date_gmt   = DATE_SUB( scheduled_date_gmt, INTERVAL %d SECOND ),
+                        scheduled_date_local = DATE_SUB( scheduled_date_local, INTERVAL %d SECOND )
+                  WHERE hook = 'novac_process_webhook'
+                    AND status = 'pending'",
+                $seconds,
+                $seconds
+            )
+        );
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+    }
+
+    /**
+     * Drop the idempotency claims and queue-health state left by earlier tests.
+     *
+     * @return void
+     */
+    private static function clear_webhook_claims(): void {
+        global $wpdb;
+
+        $names = $wpdb->get_col(
+            "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE 'novac\\_wh\\_%'"
+        );
+
+        foreach ( (array) $names as $name ) {
+            delete_option( $name );
+        }
+
+        delete_transient( 'novac_webhook_queue_stalled' );
+        delete_transient( 'novac_webhook_queue_unhealthy' );
+        delete_transient( 'novac_webhook_sweep_lock' );
+
+        // A job left queued by the previous spec would read as a stalled queue
+        // in the next one, so the suite starts each test with an empty queue.
+        if ( function_exists( 'as_unschedule_all_actions' ) ) {
+            as_unschedule_all_actions( 'novac_process_webhook' );
+            as_unschedule_all_actions( 'novac_release_webhook_claim' );
+        }
     }
 
     /**
