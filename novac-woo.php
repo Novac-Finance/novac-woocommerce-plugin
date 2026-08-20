@@ -3,7 +3,7 @@
  * Plugin Name: Novac Woo
  * Plugin URI: https://developer.novacpayment.com
  * Description: This plugin is the official plugin of Novac.
- * Version: 1.0.2
+ * Version: 1.0.3
  * Author: Novac
  * Author URI: https://www.app.novacpayment.com
  * Developer: Novac Developers

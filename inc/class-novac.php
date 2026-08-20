@@ -20,7 +20,7 @@ class Novac {
      *
      * @var string
      */
-    public string $version = '1.0.2';
+    public string $version = '1.0.3';
 
     /**
      * Plugin API version.
