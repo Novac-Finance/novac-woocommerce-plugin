@@ -1,4 +1,6 @@
 == Changelog ==
+= 1.0.3 =
+* Fixed: Webhook Processing Timeout.
 = 1.0.2 =
 * Fixed: NOVAC-01 — the settings page no longer saves an enabled gateway with missing or malformed API keys, and keys are format-checked and verified against the Novac API on save.
 * Fixed: NOVAC-01 — the gateway now returns false from is_available() when the keys for the active mode are unusable, so Novac is hidden at checkout instead of failing at payment time.
